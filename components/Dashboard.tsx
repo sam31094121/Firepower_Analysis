@@ -1,122 +1,161 @@
 
 import React from 'react';
-import { EmployeeData, EmployeeCategory, AnalysisSummary } from '../types';
+import { EmployeeData, EmployeeCategory } from '../types';
 
 interface Props {
   employees: EmployeeData[];
 }
 
 const Dashboard: React.FC<Props> = ({ employees }) => {
-  // 統計邏輯
-  const summary: AnalysisSummary = {
-    firepowerCount: employees.filter(e => e.category === EmployeeCategory.FIREPOWER).length,
-    steadyCount: employees.filter(e => e.category === EmployeeCategory.STEADY).length,
-    improvementCount: employees.filter(e => e.category === EmployeeCategory.NEEDS_IMPROVEMENT).length,
-    riskCount: employees.filter(e => e.category === EmployeeCategory.RISK).length,
-    totalRevenue: employees.reduce((sum, e) => sum + (e.monthlyActualRevenueNet || 0), 0)
-  };
-
-  const getCategoryStyles = (cat?: EmployeeCategory) => {
-    switch (cat) {
-      case EmployeeCategory.FIREPOWER: return 'bg-orange-100 text-orange-700 border-orange-300';
-      case EmployeeCategory.STEADY: return 'bg-emerald-100 text-emerald-700 border-emerald-300';
-      case EmployeeCategory.NEEDS_IMPROVEMENT: return 'bg-amber-100 text-amber-700 border-amber-300';
-      case EmployeeCategory.RISK: return 'bg-rose-100 text-rose-700 border-rose-300';
-      default: return 'bg-slate-100 text-slate-500 border-slate-200';
+  const categories = [
+    {
+      id: EmployeeCategory.FIREPOWER,
+      label: '大單火力組',
+      icon: '🔥',
+      color: 'border-orange-500 bg-orange-50/10',
+      textColor: 'text-orange-900',
+      badgeColor: 'bg-orange-600',
+      desc: '績效頂峰：具備最高成交權重。'
+    },
+    {
+      id: EmployeeCategory.STEADY,
+      label: '穩定人選',
+      icon: '💎',
+      color: 'border-slate-300 bg-slate-50/50',
+      textColor: 'text-slate-900',
+      badgeColor: 'bg-slate-600',
+      desc: '穩定輸出：符合常態分佈。'
+    },
+    {
+      id: EmployeeCategory.NEEDS_IMPROVEMENT,
+      label: '待加強',
+      icon: '⚠️',
+      color: 'border-amber-400 bg-amber-50/10',
+      textColor: 'text-amber-900',
+      badgeColor: 'bg-amber-600',
+      desc: '效能異常：建議訓練介入。'
+    },
+    {
+      id: EmployeeCategory.RISK,
+      label: '風險警告',
+      icon: '🛑',
+      color: 'border-rose-400 bg-rose-50/10',
+      textColor: 'text-rose-900',
+      badgeColor: 'bg-rose-600',
+      desc: '決策停損：建議暫停供單。'
     }
-  };
-
-  const getCategoryIcon = (cat?: EmployeeCategory) => {
-    switch (cat) {
-      case EmployeeCategory.FIREPOWER: return '🔥';
-      case EmployeeCategory.STEADY: return '💎';
-      case EmployeeCategory.NEEDS_IMPROVEMENT: return '⚠️';
-      case EmployeeCategory.RISK: return '🛑';
-      default: return '⏳';
-    }
-  };
-
-  const cards = [
-    { key: EmployeeCategory.FIREPOWER, label: '大單火力組', count: summary.firepowerCount, icon: '🔥', desc: '狀態巔峰，優先補單', color: 'text-orange-600' },
-    { key: EmployeeCategory.STEADY, label: '穩定人選', count: summary.steadyCount, icon: '💎', desc: '長期穩健，大戶首選', color: 'text-emerald-600' },
-    { key: EmployeeCategory.NEEDS_IMPROVEMENT, label: '待加強', count: summary.improvementCount, icon: '⚠️', desc: '手感不佳，僅供練手', color: 'text-amber-600' },
-    { key: EmployeeCategory.RISK, label: '風險警告', count: summary.riskCount, icon: '🛑', desc: '退貨率高，嚴禁大單', color: 'text-rose-600' },
   ];
+
+  const getEmployeesByCategory = (cat: EmployeeCategory) => {
+    return employees
+      .filter(e => e.category === cat)
+      .sort((a, b) => (a.categoryRank || 99) - (b.categoryRank || 99));
+  };
 
   return (
     <div className="space-y-8">
-      {/* 4 Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {cards.map((item) => (
-          <div 
-            key={item.key} 
-            className={`bg-white p-6 rounded-3xl shadow-sm border border-slate-200 transition-all duration-300 ${item.count > 0 ? 'ring-2 ring-slate-900 ring-offset-2' : ''}`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-4xl">{item.icon}</span>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {categories.map((cat) => {
+          const list = getEmployeesByCategory(cat.id);
+          return (
+            <div key={cat.id} className={`rounded-xl border ${cat.color} flex flex-col min-h-[500px] shadow-sm`}>
+              {/* 看板頭部 */}
+              <div className="p-4 border-b border-black/5 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">{cat.icon}</span>
+                  <div>
+                    <h3 className={`font-bold ${cat.textColor} text-base`}>{cat.label}</h3>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{cat.desc}</p>
+                  </div>
+                </div>
+                <div className={`${cat.badgeColor} text-white px-2 py-0.5 rounded text-[10px] font-bold`}>
+                  人數: {list.length}
+                </div>
+              </div>
+
+              {/* 人員列表 */}
+              <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                {list.length === 0 ? (
+                  <div className="h-64 flex flex-col items-center justify-center opacity-20 italic text-xs font-bold uppercase tracking-widest text-slate-400">
+                    尚無數據
+                  </div>
+                ) : (
+                  list.map((emp) => (
+                    <div key={emp.id} className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-all group relative">
+                      
+                      {/* 組內排名標籤 */}
+                      <div className="absolute -top-2 -left-2 bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-md z-10">
+                        <span className="text-xs font-black">{emp.categoryRank || '-'}</span>
+                      </div>
+
+                      {/* 基本資訊與總業績 */}
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="pl-4">
+                          <h4 className="font-bold text-slate-900 text-lg flex items-center">
+                            {emp.name}
+                          </h4>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">業績排名 #{emp.revenueRank}</span>
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">均價排名 #{emp.avgPriceRank}</span>
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">追續排名 #{emp.followupRank}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-black text-slate-900 tabular-nums leading-none">
+                            {emp.todayNetRevenue.toLocaleString()}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-1">總業績</div>
+                        </div>
+                      </div>
+
+                      {/* 數據網格 */}
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                          <div className="text-[8px] text-slate-400 font-bold uppercase">派單 / 派成</div>
+                          <div className="text-xs font-bold text-slate-800">
+                            {emp.todayLeads} / <span className="text-blue-600">{emp.todaySales}</span>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                          <div className="text-[8px] text-slate-400 font-bold uppercase">成交率</div>
+                          <div className="text-xs font-bold text-emerald-600">{emp.todayConvRate}</div>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                          <div className="text-[8px] text-slate-400 font-bold uppercase">客單價</div>
+                          <div className="text-xs font-bold text-slate-800">{emp.avgOrderValue.toLocaleString()}</div>
+                        </div>
+                        <div className="col-span-3 bg-slate-900 px-3 py-2 rounded flex justify-between items-center">
+                          <span className="text-[8px] text-white/40 font-bold uppercase tracking-widest">追續總額</span>
+                          <span className="text-xs font-bold text-white tabular-nums">{emp.todayFollowupSales.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* 派單決策決議區 (AI 建議) */}
+                      <div className="bg-slate-50 p-3 rounded border-l-4 border-slate-400">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">派單決策決議</span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                          {emp.aiAdvice}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-            <div className="flex items-baseline space-x-1">
-              <span className={`text-5xl font-black ${item.count > 0 ? 'text-slate-800' : 'text-slate-200'}`}>
-                {item.count}
-              </span>
-              <span className="text-sm font-bold text-slate-400">人</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-4 font-bold border-t border-slate-50 pt-3">{item.desc}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                <th className="px-8 py-5">銷售人員</th>
-                <th className="px-8 py-5 text-center">火力分組</th>
-                <th className="px-8 py-5">月實收淨額</th>
-                <th className="px-8 py-5">轉換率 (今日/月)</th>
-                <th className="px-8 py-5">AI 建議</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {employees.map((emp) => (
-                <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-8 py-6">
-                    <div className="font-black text-slate-800">{emp.name}</div>
-                    <div className="text-[10px] text-slate-400 font-bold uppercase">ID: {emp.id.slice(0,8)}</div>
-                  </td>
-                  <td className="px-8 py-6 text-center">
-                    <div className={`inline-flex items-center px-3 py-1.5 rounded-xl text-[11px] font-black border ${getCategoryStyles(emp.category)}`}>
-                      <span className="mr-1">{getCategoryIcon(emp.category)}</span>
-                      {emp.category || '分析中...'}
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="text-sm font-black text-slate-700">${(emp.monthlyActualRevenueNet || 0).toLocaleString()}</div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="text-xs font-bold text-slate-500">{emp.todayConvRate} <span className="text-slate-300 mx-1">/</span> {emp.monthlyTotalConvRate}</div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="text-[11px] text-slate-600 font-medium italic bg-slate-50 p-3 rounded-xl border border-slate-100 max-w-xs">
-                      {emp.aiAdvice || '正在分析...'}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {employees.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-8 py-32 text-center text-slate-300 font-black italic">
-                    尚未匯入數據，請從左側貼上資料
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {employees.length === 0 && (
+        <div className="bg-white rounded-xl p-20 text-center border border-dashed border-slate-200 flex flex-col items-center">
+          <div className="text-4xl mb-6 grayscale opacity-30">📊</div>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+            等待數據輸入中
+          </h3>
         </div>
-      </div>
+      )}
     </div>
   );
 };

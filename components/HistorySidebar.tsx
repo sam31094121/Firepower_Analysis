@@ -6,26 +6,33 @@ interface Props {
   records: HistoryRecord[];
   onLoadRecord: (record: HistoryRecord) => void;
   onDeleteRecord: (id: string) => void;
+  onClearAll: () => void;
   onExportAll: () => void;
 }
 
-const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord, onExportAll }) => {
-  // 關鍵修復：使用 [...records] 避免在 render 過程中修改原始 props 導致 React 狀態錯誤
+const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord, onClearAll, onExportAll }) => {
   const sortedRecords = [...records].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-        <h3 className="font-bold text-slate-800 text-sm flex items-center">
-          <span className="mr-2">📁</span> 歷史存檔管理
-        </h3>
-        <button 
-          onClick={(e) => { e.preventDefault(); onExportAll(); }}
-          type="button"
-          className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-600 px-2 py-1 rounded transition-colors"
-        >
-          匯出備份
-        </button>
+      <div className="p-4 border-b border-slate-100 flex flex-col space-y-3 bg-slate-50/50">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-slate-800 text-sm flex items-center">
+            <span className="mr-2">📁</span> 歷史存檔管理
+          </h3>
+          <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+            {records.length} 筆
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={(e) => { e.preventDefault(); onExportAll(); }}
+            type="button"
+            className="flex-1 text-[9px] font-black tracking-widest uppercase bg-slate-200 hover:bg-slate-300 text-slate-600 py-2 rounded transition-colors"
+          >
+            匯出備份 (JSON)
+          </button>
+        </div>
       </div>
       <div className="max-h-[400px] overflow-y-auto">
         {sortedRecords.length === 0 ? (
@@ -44,7 +51,9 @@ const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-bold text-slate-700 truncate">{rec.title}</div>
                     <div className="text-[10px] text-slate-400">{rec.date}</div>
-                    <div className="text-[10px] font-semibold text-emerald-600 mt-1">${rec.totalRevenue.toLocaleString()}</div>
+                    <div className="text-[10px] font-bold text-emerald-600 mt-1">
+                      {rec.totalRevenue.toLocaleString()}
+                    </div>
                   </div>
                   <button 
                     type="button"

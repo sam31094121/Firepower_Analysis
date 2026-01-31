@@ -10,35 +10,40 @@ export interface EmployeeData {
   id: string;
   name: string;
   
-  // 核心指標 (21 欄)
-  todayLeads: number; // 今日名單數
-  todaySales: number; // 今日成交
-  todayConvRate: string; // 今日轉換率
-  todayFollowupSales: number; // 今日追續成交
-  
-  monthlyTotalLeads: number; // 月累積名單
-  monthlyLeadSales: number; // 月名單成交
-  monthlyFollowupSales: number; // 月追續成交
-  monthlyTotalConvRate: string; // 月累積轉換率
-  
-  todayVirtualLeadPaid: number; // 今日虛擬名單實收
-  todayVirtualFollowupPaid: number; // 今日虛擬追續實收
-  monthlyVirtualLeadDeposit: number; // 月累積虛擬名單寄放
-  monthlyVirtualFollowupDeposit: number; // 月累積虛擬追續寄放
-  
-  todayNetRevenue: number; // 今日淨額
-  depositWithdrawal: number; // 儲存/出金
-  accumulatedDeposit: number; // 累積寄放
-  withdrawalFollowup: number; // 出金追續
-  followupAmount: number; // 追續金額
-  returnAmount: number; // 退貨金額
-  
-  monthlyActualRevenue: number; // 月實際業績
-  monthlyActualRevenueNet: number; // 月實際業績(扣退)
+  // 核心指標映射 (基於最新 11 欄位結構：行銷, 派單數, 派成數, 追續數, 總業績, 客單價, 追續總額, 業績排名, 追續排名, 均價排名, 派單成交率)
+  todayLeads: number;          // 派單數
+  todaySales: number;          // 派成數
+  todayFollowupSales: number;  // 追續總額
+  todayNetRevenue: number;     // 總業績
+  avgOrderValue: number;       // 客單價
+  followupCount: number;       // 追續數
+  revenueRank: string;         // 業績排名
+  followupRank: string;        // 追續排名
+  avgPriceRank: string;        // 均價排名
+  todayConvRate: string;       // 派單成交率
 
+  // AI 決策與分類
   category?: EmployeeCategory;
+  categoryRank?: number;       // AI 給出的組內排名
   aiAdvice?: string;
   timestamp: number;
+
+  // 原有累積數據 (保留擴充性)
+  monthlyTotalLeads: number;
+  monthlyLeadSales: number;
+  monthlyFollowupSales: number;
+  monthlyTotalConvRate: string;
+  todayVirtualLeadPaid: number;
+  todayVirtualFollowupPaid: number;
+  monthlyVirtualLeadDeposit: number;
+  monthlyVirtualFollowupDeposit: number;
+  depositWithdrawal: number;
+  accumulatedDeposit: number;
+  withdrawalFollowup: number;
+  followupAmount: number;
+  returnAmount: number;
+  monthlyActualRevenue: number;
+  monthlyActualRevenueNet: number;
 }
 
 export interface HistoryRecord {
