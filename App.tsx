@@ -83,7 +83,7 @@ const App: React.FC = () => {
       showToast("💾 存檔成功！已同步至側邊欄");
     } catch (e) {
       console.error("App: Save error", e);
-      showToast("資料庫儲存失敗", "error");
+      showToast("資料庫儲育失敗", "error");
     } finally { 
       setIsSaving(false); 
     }
@@ -146,7 +146,7 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 w-full flex-1">
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="w-full lg:w-80 space-y-6">
-            <DataInput onDataLoaded={handleDataLoaded} />
+            <DataInput onDataLoaded={handleDataLoaded} isAnalyzing={isAnalyzing} />
             <HistorySidebar 
               records={history} 
               onLoadRecord={loadRecord} 
@@ -162,8 +162,8 @@ const App: React.FC = () => {
               {employees.length > 0 && (
                 <button 
                   onClick={saveToHistory}
-                  disabled={isSaving}
-                  className={`bg-blue-600 hover:bg-slate-900 text-white px-8 py-3 rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center space-x-2 ${isSaving ? 'opacity-50' : ''}`}
+                  disabled={isSaving || isAnalyzing}
+                  className={`bg-blue-600 hover:bg-slate-900 text-white px-8 py-3 rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center space-x-2 ${isSaving || isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span>{isSaving ? '正在寫入...' : '💾 儲存分析結果'}</span>
                 </button>

@@ -6,14 +6,15 @@ import { EmployeeData, EmployeeCategory } from '../types';
 interface Props {
   onDataLoaded: (data: EmployeeData[]) => void;
   onStatusChange?: (status: string) => void;
+  isAnalyzing?: boolean;
 }
 
 const EXCEL_HEADERS = ["行銷", "派單數", "派成數", "追續數", "總業績", "客單價", "追續總額", "業績排名", "追續排名", "均價排名", "派單成交率"];
 const COL_COUNT = EXCEL_HEADERS.length;
 
-const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
+const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing }) => {
   const [activeTab, setActiveTab] = useState<'paste' | 'image'>('paste');
-  const [loading, setLoading] = useState(false);
+  const [loadingImage, setLoadingImage] = useState(false);
   
   const createBlankRow = () => Array(COL_COUNT).fill('');
   
@@ -33,6 +34,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
   };
 
   const handleClear = () => {
+    if (isAnalyzing) return;
     setGridData(Array(3).fill(null).map(() => createBlankRow()));
   };
 
@@ -44,6 +46,8 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
   };
 
   const handleSubmit = () => {
+    if (isAnalyzing) return;
+    
     const validRows = gridData.filter(row => row.some(cell => cell.trim() !== ''));
     if (validRows.length === 0) {
       alert("請輸入至少一筆數據。");
@@ -89,7 +93,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
-    if (activeTab !== 'paste') return;
+    if (activeTab !== 'paste' || isAnalyzing) return;
     const text = e.clipboardData.getData('text');
     if (!text.trim()) return;
 
@@ -107,14 +111,13 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
   };
 
   const processImageFile = useCallback(async (file: File) => {
-    setLoading(true);
+    setLoadingImage(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       try {
         const extractedRows = await extractDataFromImage(base64);
         
-        // 將 AI 提取的數據填充到 Grid 中，而不是直接提交
         if (extractedRows && extractedRows.length > 0) {
           const filledGrid = extractedRows.map(row => {
             const newRow = [...row];
@@ -124,14 +127,14 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
           filledGrid.push(createBlankRow());
           
           setGridData(filledGrid);
-          setActiveTab('paste'); // 自動切換到表格頁面供確認
+          setActiveTab('paste'); 
           alert("AI 辨識完成！數據已填入表格，請檢查無誤後點擊「執行分析」。");
         }
       } catch (err) { 
         console.error("OCR Error:", err);
         alert("AI 辨識失敗，請確保圖片清晰或嘗試手動貼上。"); 
       } finally { 
-        setLoading(false); 
+        setLoadingImage(false); 
       }
     };
     reader.readAsDataURL(file);
@@ -140,8 +143,8 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
   return (
     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-6 flex flex-col transition-all">
       <div className="flex bg-slate-100 border-b border-slate-200">
-        <button type="button" onClick={() => setActiveTab('paste')} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'paste' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>EXCEL 表格模式</button>
-        <button type="button" onClick={() => setActiveTab('image')} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'image' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>AI 報表辨識</button>
+        <button type="button" onClick={() => setActiveTab('paste')} disabled={isAnalyzing} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'paste' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>EXCEL 表格模式</button>
+        <button type="button" onClick={() => setActiveTab('image')} disabled={isAnalyzing} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'image' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>AI 報表辨識</button>
       </div>
 
       <div className="p-4" onPaste={handlePaste}>
@@ -166,8 +169,9 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
                           <input 
                             type="text"
                             value={cell}
+                            disabled={isAnalyzing}
                             onChange={(e) => handleCellChange(rIdx, cIdx, e.target.value)}
-                            className="w-full py-3 px-2 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 text-center font-bold text-slate-800 transition-all"
+                            className={`w-full py-3 px-2 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 text-center font-bold text-slate-800 transition-all ${isAnalyzing ? 'opacity-50' : ''}`}
                           />
                         </td>
                       ))}
@@ -181,25 +185,39 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange }) => {
               <button 
                 type="button"
                 onClick={handleClear}
-                className="flex-1 bg-white border-2 border-slate-200 text-slate-500 font-black py-4 rounded-xl hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-all active:scale-95 shadow-sm"
+                disabled={isAnalyzing}
+                className="flex-1 bg-white border-2 border-slate-200 text-slate-500 font-black py-4 rounded-xl hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-all active:scale-95 shadow-sm disabled:opacity-30 disabled:hover:bg-white disabled:hover:border-slate-200"
               >
                 🗑️ 清空表格
               </button>
               <button 
                 type="button"
                 onClick={handleSubmit} 
-                className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-blue-600 transition-all shadow-xl active:scale-95"
+                disabled={isAnalyzing}
+                className={`flex-1 font-black py-4 rounded-xl transition-all shadow-xl active:scale-95 flex items-center justify-center space-x-3 ${isAnalyzing ? 'bg-slate-700 cursor-not-allowed text-slate-300' : 'bg-slate-900 text-white hover:bg-blue-600'}`}
               >
-                🚀 執行智慧火力分析
+                {isAnalyzing ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>🧠分析中..</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🚀火力分析</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="border-4 border-dashed border-slate-100 rounded-2xl p-12 text-center hover:border-blue-200 hover:bg-blue-50/30 transition-all relative min-h-[240px] flex flex-col items-center justify-center group">
-              <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && processImageFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+            <div className={`border-4 border-dashed border-slate-100 rounded-2xl p-12 text-center hover:border-blue-200 hover:bg-blue-50/30 transition-all relative min-h-[240px] flex flex-col items-center justify-center group ${loadingImage ? 'pointer-events-none' : ''}`}>
+              {!loadingImage && <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && processImageFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />}
               <div className="pointer-events-none text-center">
-                {loading ? (
+                {loadingImage ? (
                   <div className="flex flex-col items-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
                     <p className="text-sm text-slate-600 font-black uppercase">AI 正在解析影像內容...</p>

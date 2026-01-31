@@ -43,7 +43,7 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // 使用 Pro 模型進行深度思考
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -96,16 +96,20 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 export const extractDataFromImage = async (base64Image: string): Promise<string[][]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
   const prompt = `
-    你是一個精準的數據 OCR 引擎。請辨識這張行銷報表截圖，並將其轉換為一個二維陣列（純數據表格）。
-    
-    請依照下列 11 個欄位的順序提取數據：
-    1.行銷, 2.派單數, 3.派成數, 4.追續數, 5.總業績, 6.客單價, 7.追續總額, 8.業績排名, 9.追續排名, 10.均價排名, 11.派單成交率。
+    你是一個極具適應力的數據 OCR 引擎。請辨識這張行銷報表截圖。
+    注意：圖片中的表頭名稱或順序可能與標準格式不同，請發揮智慧進行語意匹配。
 
-    規範：
-    - 回傳格式必須是一個二維陣列，例如：[["姓名", "10", "2", ...], ["姓名2", "15", "3", ...]]
-    - 不要包含任何表頭字樣，只要數據列。
-    - 確保數字欄位不包含貨幣符號或逗號。
-    - 如果某個欄位資訊缺失，請填入空字串 ""。
+    目標標準欄位（共 11 欄）：
+    1.行銷(姓名), 2.派單數, 3.派成數, 4.追續數, 5.總業績, 6.客單價, 7.追續總額, 8.業績排名, 9.追續排名, 10.均價排名, 11.派單成交率。
+
+    特別處理規範：
+    - 若看到 "#DIV/0!"、"Error" 或無意義的計算錯誤，請一律轉換為 "0%" 或 "0"。
+    - 自動識別圖片中的表頭，並將其對應到上述 11 個標準欄位。
+    - 若圖片中完全不存在某個標準欄位，該位置請填入空字串 ""。
+    - 清除所有貨幣符號 ($)、千分位逗號 (,)。
+    - 僅回傳數據部分的二維陣列，不要包含表頭列。
+
+    範例輸出格式：[["張三", "10", "2", "5", "50000", "5000", "20000", "1", "3", "2", "20%"], ...]
   `;
   try {
     const response = await ai.models.generateContent({
