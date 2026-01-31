@@ -1,0 +1,7 @@
+{
+  "name": "行銷火力分析系統 (Marketing Firepower Analysis)",
+  "description": "一個專業級的行銷績效分析工具，結合 Gemini AI 進行銷售員實力分組、大單火力評估與數據追蹤。支援 Excel 貼上、檔案上傳與圖片辨識功能。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
