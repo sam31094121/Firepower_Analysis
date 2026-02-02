@@ -2,12 +2,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EmployeeData, EmployeeCategory } from "../types";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+// 動態讀取 API Key,避免快取問題
+const getApiKey = (): string => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+};
 
 // 檢查 API Key 是否存在
 const checkApiKey = () => {
-  if (!API_KEY || API_KEY.trim() === '') {
+  const apiKey = getApiKey();
+  if (!apiKey || apiKey.trim() === '') {
     throw new Error(
       '⚠️ Gemini API Key 未設定!\n\n' +
       '📍 本地開發:\n' +
@@ -21,11 +25,12 @@ const checkApiKey = () => {
       '🔑 取得 API Key: https://aistudio.google.com/apikey'
     );
   }
+  return apiKey;
 };
 
 export const analyzePerformance = async (data: EmployeeData[]): Promise<EmployeeData[]> => {
-  checkApiKey();
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const apiKey = checkApiKey();
+  const ai = new GoogleGenAI({ apiKey });
 
   const simplifiedData = data.map(e => ({
     id: e.id,
@@ -133,8 +138,8 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 };
 
 export const extractDataFromImage = async (base64Image: string): Promise<string[][]> => {
-  checkApiKey();
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const apiKey = checkApiKey();
+  const ai = new GoogleGenAI({ apiKey });
   const prompt = `
     你是一個極具適應力的數據 OCR 引擎。請辨識這張行銷報表截圖。
     注意：圖片中的表頭名稱或順序可能與標準格式不同，請發揮智慧進行語意匹配。
