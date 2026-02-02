@@ -33,6 +33,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Debug - Check API Key (前4碼)
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "❌ GEMINI_API_KEY Secret 未設定或為空!"
+            exit 1
+          else
+            echo "✅ GEMINI_API_KEY Secret 已設定"
+            echo "前4碼: ${VITE_GEMINI_API_KEY:0:4}****"
+          fi
+        env:
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
       - name: Build
         run: npm run build
         env:
