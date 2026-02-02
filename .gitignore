@@ -12,6 +12,7 @@ node_modules
 .pnp
 .pnp.js
 
+
 # Build
 dist
 dist-ssr
