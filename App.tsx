@@ -4,6 +4,7 @@ import DataInput from './components/DataInput';
 import Dashboard from './components/Dashboard';
 import ChatBot from './components/ChatBot';
 import HistorySidebar from './components/HistorySidebar';
+import ApiDiagnostics from './components/ApiDiagnostics';
 import { analyzePerformance } from './services/geminiService';
 import { getAllRecordsDB, saveRecordDB, deleteRecordDB, clearAllRecordsDB } from './services/dbService';
 import { EmployeeData, HistoryRecord } from './types';
@@ -14,12 +15,14 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTitle, setCurrentTitle] = useState<string>('未命名分析');
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'loading' = 'success') => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
+    if (type !== 'loading') {
+      setTimeout(() => setNotification(prev => (prev?.message === message ? null : prev)), 5000);
+    }
+  }, []);
 
   const refreshHistory = async () => {
     try {
@@ -37,7 +40,7 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(lastSession);
         if (parsed?.data) { setEmployees(parsed.data); setCurrentTitle(parsed.title); }
-      } catch (e) {}
+      } catch (e) { }
     }
   }, []);
 
@@ -45,8 +48,8 @@ const App: React.FC = () => {
     setEmployees(newData);
     setCurrentTitle(`待分析報表 ${new Date().toLocaleTimeString()}`);
     setIsAnalyzing(true);
-    showToast("數據載入成功，AI 開始分析...");
-    
+    showToast("AI 深度分析中，請稍候...", "loading");
+
     try {
       const analyzedData = await analyzePerformance(newData);
       setEmployees(analyzedData);
@@ -54,17 +57,17 @@ const App: React.FC = () => {
       setCurrentTitle(title);
       localStorage.setItem('marketing_firepower_last_session', JSON.stringify({ title, data: analyzedData }));
       showToast("✅ AI 分析完畢");
-    } catch (error) {
-      showToast("AI 分類失敗", "error");
+    } catch (error: any) {
+      showToast(error.message || "AI 分類失敗，請檢查網路狀態", "error");
     } finally { setIsAnalyzing(false); }
-  }, []);
+  }, [showToast]);
 
   const saveToHistory = async () => {
     if (employees.length === 0 || isSaving) return;
-    
+
     const titlePrompt = window.prompt("請輸入存檔名稱：", currentTitle);
     if (titlePrompt === null) return;
-    
+
     const title = titlePrompt.trim() || `存檔 ${new Date().toLocaleString()}`;
     setIsSaving(true);
 
@@ -84,8 +87,8 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("App: Save error", e);
       showToast("資料庫儲育失敗", "error");
-    } finally { 
-      setIsSaving(false); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -131,15 +134,20 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-20 relative bg-slate-50 flex flex-col">
       {notification && (
-        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-8 py-4 rounded-full shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-300 ${notification.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'}`}>
-          <span className="text-xl">{notification.type === 'success' ? '✨' : '⚠️'}</span>
-          <span className="font-black text-sm">{notification.message}</span>
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-8 py-4 rounded-3xl shadow-2xl flex items-center space-x-3 border-2 border-white/50 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300 ${notification.type === 'error' ? 'bg-rose-600/90 text-white' : 'bg-slate-900/90 text-white'}`}>
+          {notification.type === 'loading' ? (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          ) : (
+            <span className="text-xl">{notification.type === 'success' ? '✨' : '⚠️'}</span>
+          )}
+          <span className="font-black text-xs uppercase tracking-tight">{notification.message}</span>
         </div>
       )}
 
       <header className="h-40 bg-slate-900 flex flex-col justify-end p-8 border-b-4 border-blue-600">
-        <div className="max-w-7xl mx-auto w-full">
-          <h1 className="text-3xl font-black text-white italic tracking-tighter">行銷火力分析系統 <span className="text-blue-500 font-mono text-sm ml-2">v2.1 中文專業版</span></h1>
+        <div className="max-w-7xl mx-auto w-full flex items-end justify-between">
+          <h1 className="text-3xl font-black text-white italic tracking-tighter">行銷火力分析系統</h1>
+          <ApiDiagnostics />
         </div>
       </header>
 
@@ -147,12 +155,12 @@ const App: React.FC = () => {
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="w-full lg:w-80 space-y-6">
             <DataInput onDataLoaded={handleDataLoaded} isAnalyzing={isAnalyzing} />
-            <HistorySidebar 
-              records={history} 
-              onLoadRecord={loadRecord} 
-              onDeleteRecord={deleteRecord} 
+            <HistorySidebar
+              records={history}
+              onLoadRecord={loadRecord}
+              onDeleteRecord={deleteRecord}
               onClearAll={handleClearAll}
-              onExportAll={handleExportAll} 
+              onExportAll={handleExportAll}
             />
           </div>
 
@@ -160,7 +168,7 @@ const App: React.FC = () => {
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-black text-slate-800">{currentTitle}</h2>
               {employees.length > 0 && (
-                <button 
+                <button
                   onClick={saveToHistory}
                   disabled={isSaving || isAnalyzing}
                   className={`bg-blue-600 hover:bg-slate-900 text-white px-8 py-3 rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center space-x-2 ${isSaving || isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}

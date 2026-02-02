@@ -2,11 +2,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EmployeeData, EmployeeCategory } from "../types";
 
-const API_KEY = process.env.API_KEY || '';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
 
 export const analyzePerformance = async (data: EmployeeData[]): Promise<EmployeeData[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
-  
+
   const simplifiedData = data.map(e => ({
     id: e.id,
     name: e.name,
@@ -24,7 +25,7 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 
   const prompt = `
     你是一名「資深行銷營運與派單數據科學家」，擁有極高的商業嗅覺。
-    你的唯一核心目標是：透過數據資源配置，實現「公司整體營收與成交率最大化」。
+    你的唯一核心目標是：透過數據資源配置，實現「公司整體營收最大化」。
 
     請對提供的數據進行深度評估：
     1. 【營收權重】：辨識出誰能處理高價值單（大單）、誰的追續能力最強（穩定現金流）。
@@ -34,8 +35,21 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
        - 穩定人選：數據中庸但穩定，適合分配一般量能。
        - 待加強：成交率低或數據不穩，建議進行針對性輔導。
        - 風險警告：嚴重偏離績效常態，應限制資源投入。
-
-    請針對每個人提供精準、不帶情緒、極具決策價值的「組內排名」與「數據導向決議」。
+       - 潛力成長組：成交率明顯高於均值（團隊中位數 + 5-10%），客單價在前 40%，但「派單數」明顯低於團隊中位數的 60%。這類人是被低估的將才，應優先增加派單。
+    關於「aiAdvice (派單決策決議)」的要求：
+    - 請針對該人員的數據(成交率、均價、業績)給出具體的「派單操作建議」並給予弱點分析改進方法。
+    - 語氣要堅定、專業,字數在 30-50 字之間。
+    - 例如:「當月客單價達7174元,具備高成交率、高單價特質,應列為核心主力,不過追續僅有311,490應加強客戶沾黏度。」
+    - 針對「潛力成長組」,請明確指出其「派單缺口」並強制建議增加資源投入。
+    
+    關於「scoutAdvice (星探區專用建議)」的要求：
+    - 僅針對「潛力成長組」的人員生成此欄位。
+    - 內容必須包含:1) 現況數據分析 2) 為何值得提拔的具體原因。
+    - 語氣專業、數據導向,字數控制在 25-40 字。
+    - 例如:「成交率 45% 遠超團隊均值 28%,但派單僅 12 單(中位數 60%),屬被低估人才,建議立即增撥資源。」
+    - 其他組別的人員此欄位為空字串。
+    
+    請針對每個人提供精準、不帶情緒、極具決策價值的「組內排名」與「派單決策決議」。
 
     數據內容：
     ${JSON.stringify(simplifiedData)}
@@ -53,12 +67,13 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
             type: Type.OBJECT,
             properties: {
               id: { type: Type.STRING },
-              category: { 
+              category: {
                 type: Type.STRING,
-                description: "只能是：大單火力組, 穩定人選, 待加強, 風險警告"
+                description: "只能是:大單火力組, 穩定人選, 待加強, 風險警告, 潛力成長組"
               },
-              categoryRank: { type: Type.INTEGER, description: "在該分組內的優先順位，1 為最優先" },
-              aiAdvice: { type: Type.STRING, description: "數據導向的專業決策決議" }
+              categoryRank: { type: Type.INTEGER, description: "在該分組內的優先順位,1 為最優先" },
+              aiAdvice: { type: Type.STRING, description: "數據導向的專業決策決議" },
+              scoutAdvice: { type: Type.STRING, description: "星探區專用建議(僅潛力成長組需填寫,其他組別為空字串)" }
             },
             required: ["id", "category", "categoryRank", "aiAdvice"]
           }
@@ -67,10 +82,10 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
     });
 
     const analyzedResults = JSON.parse(response.text);
-    
+
     return data.map(emp => {
       const match = analyzedResults.find((a: any) => a.id === emp.id);
-      
+
       let finalCategory = EmployeeCategory.STEADY;
       if (match?.category) {
         const rawCat = match.category.toString();
@@ -78,18 +93,23 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
         else if (rawCat.includes("穩定")) finalCategory = EmployeeCategory.STEADY;
         else if (rawCat.includes("加強")) finalCategory = EmployeeCategory.NEEDS_IMPROVEMENT;
         else if (rawCat.includes("風險")) finalCategory = EmployeeCategory.RISK;
+        else if (rawCat.includes("潛力")) finalCategory = EmployeeCategory.POTENTIAL;
       }
 
       return {
         ...emp,
         category: finalCategory,
         categoryRank: match?.categoryRank || 99,
-        aiAdvice: match?.aiAdvice || '數據不足以支持決策，建議暫停派單觀察。'
+        aiAdvice: match?.aiAdvice || '數據不足以支持決策,建議暫停派單觀察。',
+        scoutAdvice: match?.scoutAdvice || ''
       };
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI Analysis failed:", error);
-    return data;
+    if (error?.message?.includes('429') || error?.message?.includes('quota')) {
+      throw new Error("🚀 您的 API Key 已達免費額度上限 (429)！請稍候 60 秒再試，或至 Google AI Studio 檢查配額。");
+    }
+    throw error;
   }
 };
 
@@ -120,7 +140,7 @@ export const extractDataFromImage = async (base64Image: string): Promise<string[
           { text: prompt }
         ]
       },
-      config: { 
+      config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,

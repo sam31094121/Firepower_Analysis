@@ -1,12 +1,42 @@
-
 import React from 'react';
 import { EmployeeData, EmployeeCategory } from '../types';
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 
 interface Props {
   employees: EmployeeData[];
 }
 
 const Dashboard: React.FC<Props> = ({ employees }) => {
+  // 準備圖表數據
+  const chartData = employees.map(emp => ({
+    id: emp.id,
+    name: emp.name,
+    aov: emp.avgOrderValue,
+    convRate: parseFloat(emp.todayConvRate.replace('%', ''))
+  })).sort((a, b) => b.aov - a.aov);
+
+  // 滾動到特定人員的邏輯
+  const scrollToEmployee = (id: string) => {
+    const element = document.getElementById(`emp-${id}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 加入視覺高亮效果
+      element.classList.add('ring-4', 'ring-blue-400', 'ring-opacity-50', 'transition-all', 'duration-500');
+      setTimeout(() => {
+        element.classList.remove('ring-4', 'ring-blue-400', 'ring-opacity-50');
+      }, 2000);
+    }
+  };
+
   const categories = [
     {
       id: EmployeeCategory.FIREPOWER,
@@ -52,8 +82,289 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
       .sort((a, b) => (a.categoryRank || 99) - (b.categoryRank || 99));
   };
 
+  // 統合派單順序邏輯
+  const dispatchOrder = [...employees].sort((a, b) => {
+    const categoryPriority = {
+      [EmployeeCategory.FIREPOWER]: 1,
+      [EmployeeCategory.STEADY]: 2,
+      [EmployeeCategory.NEEDS_IMPROVEMENT]: 3,
+      [EmployeeCategory.RISK]: 4,
+    };
+
+    const aPriority = categoryPriority[a.category] || 99;
+    const bPriority = categoryPriority[b.category] || 99;
+
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return (a.categoryRank || 99) - (b.categoryRank || 99);
+  });
+
   return (
     <div className="space-y-8">
+      {/* 派單順序卡片 (主視覺區) - 淺色主題 */}
+      {employees.length > 0 && (
+        <div className="bg-white rounded-2xl overflow-hidden shadow-xl border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="flex items-center space-x-4">
+              <span className="text-3xl">🎯</span>
+              <div>
+                <h2 className="text-slate-900 text-xl font-black tracking-tight">當前最優派單順序 (AI 建議)</h2>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">整合四大維度排名，點擊人員查看詳情</p>
+              </div>
+            </div>
+            <div className="hidden sm:block bg-blue-50 border border-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter">
+              AI 數據導引
+            </div>
+          </div>
+
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+              {dispatchOrder.map((emp, index) => (
+                <div
+                  key={emp.id}
+                  onClick={() => scrollToEmployee(emp.id)}
+                  className="group flex bg-slate-50 hover:bg-white border border-slate-100 hover:border-blue-200 rounded-2xl p-5 transition-all cursor-pointer relative overflow-hidden shadow-sm hover:shadow-md"
+                >
+
+                  <div className="relative flex items-start space-x-4 w-full">
+                    <div className="flex-shrink-0 flex flex-col items-center space-y-2">
+                      <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center font-black text-lg border border-slate-700 shadow-lg text-white">
+                        {index + 1}
+                      </div>
+                      <span className="text-2xl filter drop-shadow-sm">
+                        {emp.category === EmployeeCategory.FIREPOWER ? '🔥' :
+                          emp.category === EmployeeCategory.STEADY ? '💎' :
+                            emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? '⚠️' : '🛑'}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="text-slate-900 font-black text-base truncate pr-2">{emp.name}</h4>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border truncate ${emp.category === EmployeeCategory.FIREPOWER ? 'bg-orange-50 border-orange-100 text-orange-600' :
+                          emp.category === EmployeeCategory.STEADY ? 'bg-blue-50 border-blue-100 text-blue-600' :
+                            emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? 'bg-amber-50 border-amber-100 text-amber-600' :
+                              'bg-rose-50 border-rose-100 text-rose-600'
+                          }`}>
+                          {emp.category}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-3 mb-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>成交率 {emp.todayConvRate}</span>
+                        <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></span>業績 #{emp.revenueRank}</span>
+                      </div>
+
+                      <div className="bg-white rounded-xl p-3 border border-slate-200 group-hover:border-blue-100 transition-colors shadow-inner">
+                        <p className="text-xs text-slate-600 font-medium leading-relaxed italic">
+                          "{emp.aiAdvice}"
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 人員效能綜分圖 (Bar + Line) */}
+      {employees.length > 0 && (
+        <div className="bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-slate-900 text-lg font-black tracking-tight">人員效能綜分圖</h3>
+            <div className="flex items-center space-x-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              <div className="flex items-center shrink-0">
+                <span className="w-3 h-3 bg-blue-500 rounded-sm mr-2"></span>
+                <span>客單價 (左軸)</span>
+              </div>
+              <div className="flex items-center shrink-0">
+                <span className="w-3 h-3 bg-rose-500 rounded-full mr-2"></span>
+                <span>成交率 % (右軸)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 團隊平均數據 */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-1">團隊平均客單價</div>
+                  <div className="text-2xl font-black text-blue-600 tabular-nums">
+                    ${Math.round(employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / employees.length).toLocaleString()}
+                  </div>
+                </div>
+                <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-2xl">
+                  💰
+                </div>
+              </div>
+            </div>
+            <div className="bg-rose-50 border border-rose-100 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-rose-600 font-black uppercase tracking-widest mb-1">團隊平均成交率</div>
+                  <div className="text-2xl font-black text-rose-600 tabular-nums">
+                    {(employees.reduce((sum, e) => sum + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="w-12 h-12 bg-rose-500 rounded-lg flex items-center justify-center text-2xl">
+                  🎯
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-[400px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }}
+                  interval={0}
+                  angle={-15}
+                  textAnchor="end"
+                />
+                <YAxis
+                  yAxisId="left"
+                  orientation="left"
+                  stroke="#3b82f6"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#3b82f6', fontSize: 11, fontWeight: 'black' }}
+                  label={{ value: '客單價', angle: -90, position: 'insideLeft', offset: -5, style: { fill: '#3b82f6', fontSize: 10, fontWeight: 'bold' } }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  stroke="#f43f5e"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#f43f5e', fontSize: 11, fontWeight: 'black' }}
+                  label={{ value: '成交率 (%)', angle: 90, position: 'insideRight', offset: -5, style: { fill: '#f43f5e', fontSize: 10, fontWeight: 'bold' } }}
+                  domain={[0, 100]}
+                />
+                <Tooltip
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                  itemStyle={{ fontSize: '11px', fontWeight: 'black', textTransform: 'uppercase' }}
+                  labelStyle={{ fontWeight: 'black', color: '#1e293b', marginBottom: '4px' }}
+                />
+                <Bar
+                  yAxisId="left"
+                  dataKey="aov"
+                  fill="#3b82f6"
+                  radius={[4, 4, 0, 0]}
+                  barSize={40}
+                  name="客單價"
+                  onClick={(data) => {
+                    if (data && data.id) scrollToEmployee(data.id);
+                  }}
+                  className="cursor-pointer"
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="convRate"
+                  stroke="#f43f5e"
+                  strokeWidth={3}
+                  dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  name="成交率 (%)"
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* 潛力星探區 - Professional Deep Night Theme */}
+      {employees.length > 0 && (
+        <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-blue-500/30 animate-in fade-in zoom-in duration-700">
+          <div className="p-8 border-b border-white/5 flex items-center justify-between">
+            <div className="flex items-center space-x-6">
+              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-4xl shadow-lg">
+                🔭
+              </div>
+              <div>
+                <h2 className="text-white text-2xl font-black tracking-tight">潛力星探區
+                </h2>
+                <p className="text-slate-400 text-sm font-bold mt-1">「尋找被低估的將才:高轉換、低分配、值得增加資源的人選」</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {employees
+                .filter(emp => {
+                  // 星探判定邏輯
+                  const conv = parseFloat(emp.todayConvRate.replace('%', ''));
+                  const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
+                  const sortedLeads = [...employees].sort((a, b) => a.todayLeads - b.todayLeads);
+                  const medianLeads = sortedLeads[Math.floor(sortedLeads.length / 2)]?.todayLeads || 0;
+
+                  // 1. AI 標記為潛力組 OR 2. 演算法偵測 (成交率 > 團隊平均 + 5%,且派單數 <= 中位數 60%)
+                  return emp.category === EmployeeCategory.POTENTIAL || (conv >= teamAvgConv + 5 && emp.todayLeads <= medianLeads * 0.6);
+                })
+                .map((emp) => (
+                  <div
+                    key={emp.id}
+                    onClick={() => scrollToEmployee(emp.id)}
+                    className="group relative bg-white/10 border border-white/10 rounded-2xl p-6 hover:bg-white/20 transition-all cursor-pointer overflow-hidden backdrop-blur-md shadow-xl"
+                  >
+                    {/* 背景光暈效果 */}
+                    <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-all"></div>
+
+                    <div className="relative flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <h4 className="text-white font-black text-lg">{emp.name}</h4>
+                      </div>
+                      <div className="text-right">
+                        <div className="bg-emerald-500/20 px-3 py-1 rounded-lg inline-block">
+                          <div className="text-emerald-400 font-black text-xl tabular-nums leading-none">{emp.todayConvRate}</div>
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">核心轉換率</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                        <div className="text-[10px] text-slate-400 font-black uppercase mb-1">當前派單量</div>
+                        <div className="text-sm font-black text-white">{emp.todayLeads} <span className="text-[10px] text-rose-400 ml-1">(-低於均值)</span></div>
+                      </div>
+                      <div className="bg-blue-500/20 rounded-xl p-3 border border-white/10">
+                        <div className="text-[10px] text-slate-400 font-black uppercase mb-1">派單價值</div>
+                        <div className="text-sm font-black text-blue-400">${emp.avgOrderValue.toLocaleString()}</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-600/20 rounded-xl p-4 border-l-4 border-blue-500/30">
+                      <p className="text-xs text-blue-200 font-bold leading-relaxed">
+                        💡 {emp.scoutAdvice || '成交率遠超平均且派單極少,可提高分配派單。'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              {employees.filter(emp => {
+                const conv = parseFloat(emp.todayConvRate.replace('%', ''));
+                const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
+                const sortedLeads = [...employees].sort((a, b) => a.todayLeads - b.todayLeads);
+                const medianLeads = sortedLeads[Math.floor(sortedLeads.length / 2)]?.todayLeads || 0;
+                return emp.category === EmployeeCategory.POTENTIAL || (conv >= teamAvgConv + 5 && emp.todayLeads <= medianLeads * 0.6);
+              }).length === 0 && (
+                  <div className="col-span-full py-12 flex flex-col items-center justify-center opacity-40">
+                    <span className="text-4xl mb-4">🌑</span>
+                    <p className="text-slate-500 text-xs font-black uppercase tracking-widest">目前暫無符合「被低估」條件的人才</p>
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {categories.map((cat) => {
           const list = getEmployeesByCategory(cat.id);
@@ -81,12 +392,11 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   </div>
                 ) : (
                   list.map((emp) => (
-                    <div key={emp.id} className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-all group relative">
-                      
-                      {/* 組內排名標籤 */}
-                      <div className="absolute -top-2 -left-2 bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-md z-10">
-                        <span className="text-xs font-black">{emp.categoryRank || '-'}</span>
-                      </div>
+                    <div
+                      key={emp.id}
+                      id={`emp-${emp.id}`}
+                      className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-all group relativeScroll"
+                    >
 
                       {/* 基本資訊與總業績 */}
                       <div className="flex justify-between items-start mb-4">

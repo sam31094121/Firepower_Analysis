@@ -3,13 +3,14 @@ export enum EmployeeCategory {
   FIREPOWER = '大單火力組',
   STEADY = '穩定人選',
   NEEDS_IMPROVEMENT = '待加強',
-  RISK = '風險警告'
+  RISK = '風險警告',
+  POTENTIAL = '潛力成長組'
 }
 
 export interface EmployeeData {
   id: string;
   name: string;
-  
+
   // 核心指標映射 (基於最新 11 欄位結構：行銷, 派單數, 派成數, 追續數, 總業績, 客單價, 追續總額, 業績排名, 追續排名, 均價排名, 派單成交率)
   todayLeads: number;          // 派單數
   todaySales: number;          // 派成數
@@ -25,7 +26,8 @@ export interface EmployeeData {
   // AI 決策與分類
   category?: EmployeeCategory;
   categoryRank?: number;       // AI 給出的組內排名
-  aiAdvice?: string;
+  aiAdvice?: string;           // 一般派單建議
+  scoutAdvice?: string;        // 星探區專用建議(現況+提拔原因)
   timestamp: number;
 
   // 原有累積數據 (保留擴充性)
