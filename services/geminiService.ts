@@ -5,7 +5,26 @@ import { EmployeeData, EmployeeCategory } from "../types";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
 
+// 檢查 API Key 是否存在
+const checkApiKey = () => {
+  if (!API_KEY || API_KEY.trim() === '') {
+    throw new Error(
+      '⚠️ Gemini API Key 未設定!\n\n' +
+      '📍 本地開發:\n' +
+      '  請在專案根目錄建立 .env.local 檔案,並加入:\n' +
+      '  VITE_GEMINI_API_KEY=你的API金鑰\n\n' +
+      '📍 GitHub Pages 部署:\n' +
+      '  1. 前往 GitHub Repository Settings\n' +
+      '  2. 點選 Secrets and variables > Actions\n' +
+      '  3. 新增 Secret: GEMINI_API_KEY\n' +
+      '  4. 重新推送程式碼觸發部署\n\n' +
+      '🔑 取得 API Key: https://aistudio.google.com/apikey'
+    );
+  }
+};
+
 export const analyzePerformance = async (data: EmployeeData[]): Promise<EmployeeData[]> => {
+  checkApiKey();
   const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   const simplifiedData = data.map(e => ({
@@ -114,6 +133,7 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 };
 
 export const extractDataFromImage = async (base64Image: string): Promise<string[][]> => {
+  checkApiKey();
   const ai = new GoogleGenAI({ apiKey: API_KEY });
   const prompt = `
     你是一個極具適應力的數據 OCR 引擎。請辨識這張行銷報表截圖。
