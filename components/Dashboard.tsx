@@ -428,11 +428,13 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                                   {emp.avgOrderValue >= teamAvgAov ? '↑' : '↓'} {Math.abs(Math.round((emp.avgOrderValue / teamAvgAov - 1) * 100))}%
                                 </span>
                               </div>
-                              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                              <div className="relative h-1 w-full bg-white/5 rounded-full overflow-visible">
                                 <div
-                                  className="h-full bg-blue-500 rounded-full"
+                                  className="absolute top-0 left-0 h-full bg-blue-500 rounded-full"
                                   style={{ width: `${Math.min((emp.avgOrderValue / teamAvgAov) * 50, 100)}%` }}
                                 ></div>
+                                {/* 團隊平均標記線 */}
+                                <div className="absolute top-0 left-1/2 -translate-x-px h-full w-0.5 bg-yellow-400/80 shadow-sm z-10"></div>
                               </div>
                             </div>
                             {/* 成交率對比 */}
@@ -443,11 +445,13 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                                   {conv >= teamAvgConv ? '↑' : '↓'} {(conv - teamAvgConv).toFixed(1)}%
                                 </span>
                               </div>
-                              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                              <div className="relative h-1 w-full bg-white/5 rounded-full overflow-visible">
                                 <div
-                                  className="h-full bg-rose-500 rounded-full"
+                                  className="absolute top-0 left-0 h-full bg-rose-500 rounded-full"
                                   style={{ width: `${Math.min((conv / teamAvgConv) * 50, 100)}%` }}
                                 ></div>
+                                {/* 團隊平均標記線 */}
+                                <div className="absolute top-0 left-1/2 -translate-x-px h-full w-0.5 bg-yellow-400/80 shadow-sm z-10"></div>
                               </div>
                             </div>
                           </div>
