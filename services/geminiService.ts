@@ -81,7 +81,7 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -158,7 +158,7 @@ export const extractDataFromImage = async (base64Image: string): Promise<string[
   `;
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: {
         parts: [
           { inlineData: { data: base64Image.split(',')[1], mimeType: 'image/jpeg' } },

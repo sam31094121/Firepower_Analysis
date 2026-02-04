@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { EmployeeData, EmployeeCategory } from '../types';
 import {
   ComposedChart,
@@ -10,12 +10,15 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
+import { speakPerformance } from '../services/ttsService';
 
 interface Props {
   employees: EmployeeData[];
 }
 
 const Dashboard: React.FC<Props> = ({ employees }) => {
+  const [speakingEmployeeId, setSpeakingEmployeeId] = useState<string | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   // 準備圖表數據
   const chartData = employees.map(emp => ({
     id: emp.id,
@@ -34,6 +37,45 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
       setTimeout(() => {
         element.classList.remove('ring-4', 'ring-blue-400', 'ring-opacity-50');
       }, 2000);
+    }
+  };
+
+  // 處理員工卡片點擊，觸發 TTS 播報
+  const handleCardClick = async (emp: EmployeeData, event: React.MouseEvent) => {
+    // 防止事件冒泡
+    event.stopPropagation();
+
+    // 防抖：如果正在播放，則忽略點擊
+    if (speakingEmployeeId) {
+      return;
+    }
+
+    try {
+      // 初始化 AudioContext（首次使用時）
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      // 解除瀏覽器自動播放封鎖（必須在用戶互動後調用）
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
+      // 設定播放狀態
+      setSpeakingEmployeeId(emp.id);
+
+      // 播放語音
+      await speakPerformance(emp, audioContextRef.current);
+
+      // 播放完成，清除狀態
+      setSpeakingEmployeeId(null);
+    } catch (error: any) {
+      console.error('播放失敗:', error);
+      setSpeakingEmployeeId(null);
+
+      // 顯示詳細錯誤訊息
+      const errorMsg = error?.message || '未知錯誤';
+      alert(`🔊 語音播報失敗\n\n${errorMsg}`);
     }
   };
 
@@ -309,45 +351,107 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   // 1. AI 標記為潛力組 OR 2. 演算法偵測 (成交率 > 團隊平均 + 5%,且派單數 <= 中位數 60%)
                   return emp.category === EmployeeCategory.POTENTIAL || (conv >= teamAvgConv + 5 && emp.todayLeads <= medianLeads * 0.6);
                 })
-                .map((emp) => (
-                  <div
-                    key={emp.id}
-                    onClick={() => scrollToEmployee(emp.id)}
-                    className="group relative bg-white/10 border border-white/10 rounded-2xl p-6 hover:bg-white/20 transition-all cursor-pointer overflow-hidden backdrop-blur-md shadow-xl"
-                  >
-                    {/* 背景光暈效果 */}
-                    <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-all"></div>
+                .map((emp) => {
+                  const dispatchRank = dispatchOrder.findIndex(de => de.id === emp.id) + 1;
+                  const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
+                  const teamAvgAov = employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / employees.length;
+                  const conv = parseFloat(emp.todayConvRate.replace('%', ''));
 
-                    <div className="relative flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-3">
-                        <h4 className="text-white font-black text-lg">{emp.name}</h4>
-                      </div>
-                      <div className="text-right">
-                        <div className="bg-emerald-500/20 px-3 py-1 rounded-lg inline-block">
-                          <div className="text-emerald-400 font-black text-xl tabular-nums leading-none">{emp.todayConvRate}</div>
+                  return (
+                    <div
+                      key={emp.id}
+                      onClick={(e) => handleCardClick(emp, e)}
+                      className={`group relative bg-white/10 border rounded-2xl p-6 hover:bg-white/20 transition-all cursor-pointer overflow-hidden backdrop-blur-md shadow-xl ${speakingEmployeeId === emp.id
+                        ? 'ring-4 ring-blue-400 border-blue-400'
+                        : 'border-white/10'
+                        }`}
+                    >
+                      {/* 播放狀態指示器 */}
+                      {speakingEmployeeId === emp.id && (
+                        <div className="absolute top-4 right-4 z-10">
+                          <span className="text-blue-400 text-2xl animate-bounce drop-shadow-lg">🔊</span>
                         </div>
-                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">核心轉換率</div>
-                      </div>
-                    </div>
+                      )}
 
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                        <div className="text-[10px] text-slate-400 font-black uppercase mb-1">當前派單量</div>
-                        <div className="text-sm font-black text-white">{emp.todayLeads} <span className="text-[10px] text-rose-400 ml-1">(-低於均值)</span></div>
-                      </div>
-                      <div className="bg-blue-500/20 rounded-xl p-3 border border-white/10">
-                        <div className="text-[10px] text-slate-400 font-black uppercase mb-1">派單價值</div>
-                        <div className="text-sm font-black text-blue-400">${emp.avgOrderValue.toLocaleString()}</div>
-                      </div>
-                    </div>
+                      {/* 背景光暈效果 */}
+                      <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-all"></div>
 
-                    <div className="bg-blue-600/20 rounded-xl p-4 border-l-4 border-blue-500/30">
-                      <p className="text-xs text-blue-200 font-bold leading-relaxed">
-                        💡 {emp.scoutAdvice || '成交率遠超平均且派單極少,可提高分配派單。'}
-                      </p>
+                      <div className="relative flex items-center justify-between mb-4">
+                        <div className="flex flex-col">
+                          <h4 className="text-white font-black text-lg">{emp.name}</h4>
+                          <span className="text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full mt-1 inline-block w-fit">
+                            AI 建議順序: #{dispatchRank}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="bg-emerald-500/20 px-3 py-1 rounded-lg inline-block">
+                            <div className="text-emerald-400 font-black text-xl tabular-nums leading-none">{emp.todayConvRate}</div>
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">核心轉換率</div>
+                        </div>
+                      </div>
+
+                      {/* 人員效能綜分區塊 */}
+                      <div className="space-y-3 mb-4">
+                        <div className="bg-black/20 rounded-xl p-3 border border-white/5">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-[10px] text-slate-400 font-black uppercase">人員效能綜分指標</span>
+                            <span className="text-[9px] text-blue-400 font-bold">VS 團隊平均</span>
+                          </div>
+                          <div className="space-y-2">
+                            {/* 客單價對比 */}
+                            <div>
+                              <div className="flex justify-between text-[9px] mb-1">
+                                <span className="text-slate-300">客單價: ${emp.avgOrderValue.toLocaleString()}</span>
+                                <span className={emp.avgOrderValue >= teamAvgAov ? 'text-emerald-400' : 'text-rose-400'}>
+                                  {emp.avgOrderValue >= teamAvgAov ? '↑' : '↓'} {Math.abs(Math.round((emp.avgOrderValue / teamAvgAov - 1) * 100))}%
+                                </span>
+                              </div>
+                              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-500 rounded-full"
+                                  style={{ width: `${Math.min((emp.avgOrderValue / teamAvgAov) * 50, 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                            {/* 成交率對比 */}
+                            <div>
+                              <div className="flex justify-between text-[9px] mb-1">
+                                <span className="text-slate-300">成交率: {emp.todayConvRate}</span>
+                                <span className={conv >= teamAvgConv ? 'text-emerald-400' : 'text-rose-400'}>
+                                  {conv >= teamAvgConv ? '↑' : '↓'} {(conv - teamAvgConv).toFixed(1)}%
+                                </span>
+                              </div>
+                              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-rose-500 rounded-full"
+                                  style={{ width: `${Math.min((conv / teamAvgConv) * 50, 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                            <div className="text-[10px] text-slate-400 font-black uppercase mb-1">當前派單量</div>
+                            <div className="text-sm font-black text-white">{emp.todayLeads} <span className="text-[10px] text-rose-400 ml-1">(-低於均值)</span></div>
+                          </div>
+                          <div className="bg-blue-500/20 rounded-xl p-3 border border-white/10">
+                            <div className="text-[10px] text-slate-400 font-black uppercase mb-1">派單價值</div>
+                            <div className="text-sm font-black text-blue-400">${emp.avgOrderValue.toLocaleString()}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-blue-600/20 rounded-xl p-4 border-l-4 border-blue-500/30">
+                        <p className="text-xs text-blue-200 font-bold leading-relaxed">
+                          💡 {emp.scoutAdvice || '成交率遠超平均且派單極少,可提高分配派單。'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               {employees.filter(emp => {
                 const conv = parseFloat(emp.todayConvRate.replace('%', ''));
                 const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
@@ -395,8 +499,18 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                     <div
                       key={emp.id}
                       id={`emp-${emp.id}`}
-                      className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-all group relativeScroll"
+                      onClick={(e) => handleCardClick(emp, e)}
+                      className={`bg-white p-5 rounded-lg border shadow-sm hover:border-blue-400 transition-all group relativeScroll cursor-pointer ${speakingEmployeeId === emp.id
+                        ? 'ring-4 ring-blue-400 border-blue-400'
+                        : 'border-slate-200'
+                        }`}
                     >
+                      {/* 播放狀態指示器 */}
+                      {speakingEmployeeId === emp.id && (
+                        <div className="absolute top-2 right-2 flex items-center space-x-1">
+                          <span className="text-blue-500 text-xl animate-bounce">🔊</span>
+                        </div>
+                      )}
 
                       {/* 基本資訊與總業績 */}
                       <div className="flex justify-between items-start mb-4">
