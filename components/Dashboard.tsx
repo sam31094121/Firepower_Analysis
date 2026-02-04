@@ -118,9 +118,30 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
     }
   ];
 
+  // 取得指定類別的員工
+  // ⚠️ 重要：POTENTIAL 員工會同時顯示在潛力星探區 + 根據成交率自動歸入四大分類之一
   const getEmployeesByCategory = (cat: EmployeeCategory) => {
     return employees
-      .filter(e => e.category === cat)
+      .filter(e => {
+        // 本身就是該類別
+        if (e.category === cat) return true;
+
+        // POTENTIAL 員工額外判定：根據成交率決定應歸入哪一組
+        if (e.category === EmployeeCategory.POTENTIAL) {
+          const conv = parseFloat(e.todayConvRate.replace('%', ''));
+
+          // 成交率 >= 30% 且客單價高 → 歸入火力組
+          if (conv >= 30 && e.avgOrderValue >= 5000 && cat === EmployeeCategory.FIREPOWER) return true;
+          // 成交率 >= 20% 且 < 30% → 歸入穩定人選
+          if (conv >= 20 && conv < 30 && cat === EmployeeCategory.STEADY) return true;
+          // 成交率 >= 10% 且 < 20% → 歸入待加強
+          if (conv >= 10 && conv < 20 && cat === EmployeeCategory.NEEDS_IMPROVEMENT) return true;
+          // 成交率 < 10% → 歸入風險警告
+          if (conv < 10 && cat === EmployeeCategory.RISK) return true;
+        }
+
+        return false;
+      })
       .sort((a, b) => (a.categoryRank || 99) - (b.categoryRank || 99));
   };
 
