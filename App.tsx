@@ -4,10 +4,24 @@ import DataInput from './components/DataInput';
 import Dashboard from './components/Dashboard';
 import ChatBot from './components/ChatBot';
 import HistorySidebar from './components/HistorySidebar';
+import CalendarCard from './components/CalendarCard';
+import EmployeeDirectory from './components/EmployeeDirectory';
+import EmployeeProfilePage from './components/EmployeeProfilePage';
 import ApiDiagnostics from './components/ApiDiagnostics';
 import { analyzePerformance } from './services/geminiService';
-import { getAllRecordsDB, saveRecordDB, deleteRecordDB, clearAllRecordsDB } from './services/dbService';
-import { EmployeeData, HistoryRecord } from './types';
+import {
+  getAllRecordsDB,
+  saveRecordDB,
+  deleteRecordDB,
+  clearAllRecordsDB,
+  getRecordByDateDB,
+  getEmployeeProfileDB,
+  createEmployeeProfileDB,
+  updateEmployeeProfileDB,
+  saveEmployeeDailyRecordDB,
+  getAllEmployeeProfilesDB
+} from './services/dbService';
+import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from './types';
 
 const App: React.FC = () => {
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
@@ -15,7 +29,13 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTitle, setCurrentTitle] = useState<string>('未命名分析');
+  const [currentArchiveDate, setCurrentArchiveDate] = useState<string>('');
+  const [currentDataSource, setCurrentDataSource] = useState<'minshi' | 'yishin' | 'combined'>('combined');
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+  // 員工系統 state
+  const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeProfile | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'loading' = 'success') => {
     setNotification({ message, type });
@@ -53,14 +73,84 @@ const App: React.FC = () => {
     try {
       const analyzedData = await analyzePerformance(newData);
       setEmployees(analyzedData);
-      const title = `分析完成 ${new Date().toLocaleString()}`;
+
+      // 自動存檔：使用選定的日期與表格類型
+      const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+      const dataSourceLabel = currentDataSource === 'minshi' ? '民視表' : currentDataSource === 'yishin' ? '奕心表' : '總和表';
+      const title = `${archiveDate} ${dataSourceLabel}`;
+
       setCurrentTitle(title);
+      setIsSaving(true);
+
+      const newRecord: HistoryRecord = {
+        id: `rec-${Date.now()}`,
+        title: title,
+        date: new Date().toLocaleString(),
+        archiveDate: archiveDate,
+        dataSource: currentDataSource,
+        data: JSON.parse(JSON.stringify(analyzedData)),
+        totalRevenue: analyzedData.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
+      };
+
+      await saveRecordDB(newRecord);
+      await refreshHistory();
+
+      // ==================== 員工自動建檔邏輯 ====================
+      try {
+        for (const empData of analyzedData) {
+          const empId = empData.name; // 使用姓名作為 ID
+
+          // 檢查員工檔案是否存在
+          let empProfile = await getEmployeeProfileDB(empId);
+
+          if (!empProfile) {
+            // 不存在：建立新檔案
+            empProfile = {
+              id: empId,
+              name: empData.name,
+              status: 'active',
+              accountStatus: 'enabled',
+              joinDate: archiveDate,
+              notes: '',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            await createEmployeeProfileDB(empProfile);
+            console.log(`✅ 自動建檔：${empData.name}`);
+          } else {
+            // 存在：更新時間
+            empProfile.updatedAt = new Date().toISOString();
+            await updateEmployeeProfileDB(empProfile);
+          }
+
+          // 儲存員工每日紀錄
+          const dailyRecord: EmployeeDailyRecord = {
+            id: `${empId}-${archiveDate}-${currentDataSource}`,
+            employeeId: empId,
+            employeeName: empData.name,
+            date: archiveDate,
+            data: empData,
+            source: currentDataSource,
+            createdAt: new Date().toISOString()
+          };
+          await saveEmployeeDailyRecordDB(dailyRecord);
+        }
+        console.log(`✅ 員工建檔完成：共 ${analyzedData.length} 名`);
+      } catch (error) {
+        console.error('員工建檔失敗', error);
+      }
+      // ==================== 員工自動建檔邏輯結束 ====================
+
+
       localStorage.setItem('marketing_firepower_last_session', JSON.stringify({ title, data: analyzedData }));
-      showToast("✅ AI 分析完畢");
+      showToast("✅ AI 分析完畢並自動存檔");
     } catch (error: any) {
       showToast(error.message || "AI 分類失敗，請檢查網路狀態", "error");
-    } finally { setIsAnalyzing(false); }
-  }, [showToast]);
+    } finally {
+      setIsAnalyzing(false);
+      setIsSaving(false);
+    }
+  }, [showToast, currentArchiveDate, currentDataSource]);
 
   const saveToHistory = async () => {
     if (employees.length === 0 || isSaving) return;
@@ -71,10 +161,15 @@ const App: React.FC = () => {
     const title = titlePrompt.trim() || `存檔 ${new Date().toLocaleString()}`;
     setIsSaving(true);
 
+    // 使用當前選擇的歸檔日期，若無則使用今天
+    const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+
     const newRecord: HistoryRecord = {
       id: `rec-${Date.now()}`,
       title: title,
       date: new Date().toLocaleString(),
+      archiveDate: archiveDate,
+      dataSource: currentDataSource,
       data: JSON.parse(JSON.stringify(employees)),
       totalRevenue: employees.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
     };
@@ -95,7 +190,22 @@ const App: React.FC = () => {
   const loadRecord = (record: HistoryRecord) => {
     setEmployees([...record.data]);
     setCurrentTitle(record.title);
+    setCurrentArchiveDate(record.archiveDate || '');
+    setCurrentDataSource(record.dataSource || 'combined');
     showToast(`已載入：${record.title}`);
+  };
+
+  const handleDateSelect = async (date: string, dataSource: 'minshi' | 'yishin' | 'combined') => {
+    setCurrentArchiveDate(date);
+    setCurrentDataSource(dataSource);
+    const record = await getRecordByDateDB(date, dataSource); // 傳入 dataSource
+    if (record) {
+      loadRecord(record);
+    } else {
+      setEmployees([]);
+      setCurrentTitle(`${date} (${dataSource === 'minshi' ? '民視表' : dataSource === 'yishin' ? '奕心表' : '總和表'}) - 無數據`);
+      showToast(`${date} 無數據，可上傳新數據`, 'error');
+    }
   };
 
   const deleteRecord = async (id: string) => {
@@ -154,6 +264,16 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 w-full flex-1">
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="w-full lg:w-80 space-y-6">
+            {/* 員工清單按鈕 */}
+            <button
+              onClick={() => setShowEmployeeDirectory(true)}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-xl font-black text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <span className="text-2xl">👥</span>
+              員工清單
+            </button>
+
+            <CalendarCard onDateSelect={handleDateSelect} />
             <DataInput onDataLoaded={handleDataLoaded} isAnalyzing={isAnalyzing} />
             <HistorySidebar
               records={history}
@@ -167,14 +287,11 @@ const App: React.FC = () => {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-black text-slate-800">{currentTitle}</h2>
-              {employees.length > 0 && (
-                <button
-                  onClick={saveToHistory}
-                  disabled={isSaving || isAnalyzing}
-                  className={`bg-blue-600 hover:bg-slate-900 text-white px-8 py-3 rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center space-x-2 ${isSaving || isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span>{isSaving ? '正在寫入...' : '💾 儲存分析結果'}</span>
-                </button>
+              {/* 自動存檔，不需手動按鈕 */}
+              {employees.length > 0 && currentArchiveDate && (
+                <div className="text-sm text-slate-600 font-bold">
+                  📅 已存檔至：{currentArchiveDate}
+                </div>
               )}
             </div>
             <Dashboard employees={employees} />
@@ -182,6 +299,38 @@ const App: React.FC = () => {
         </div>
       </main>
       <ChatBot contextData={employees} />
+
+      {/* 員工清單模態視窗 */}
+      {showEmployeeDirectory && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col relative">
+            <button
+              onClick={() => setShowEmployeeDirectory(false)}
+              className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors z-10"
+            >
+              ✕
+            </button>
+            <EmployeeDirectory
+              onSelectEmployee={(emp) => {
+                setSelectedEmployee(emp);
+                setShowEmployeeDirectory(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 員工詳細頁模態視窗 */}
+      {selectedEmployee && (
+        <EmployeeProfilePage
+          employee={selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+          onUpdate={() => {
+            // 可選：重新載入員工清單
+            setSelectedEmployee(null);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -52,6 +52,8 @@ export interface HistoryRecord {
   id: string;
   title: string;
   date: string;
+  archiveDate?: string;      // 歸檔日期（YYYY-MM-DD），用於月曆選擇
+  dataSource?: 'minshi' | 'yishin' | 'combined';  // 表格來源
   data: EmployeeData[];
   totalRevenue: number;
 }
@@ -67,4 +69,28 @@ export interface AnalysisSummary {
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
+}
+
+// 員工檔案
+export interface EmployeeProfile {
+  id: string;                    // 員工唯一 ID（使用姓名作為 ID）
+  name: string;                  // 員工姓名
+  status: 'active' | 'inactive'; // 在職/離職
+  accountStatus: 'enabled' | 'disabled'; // 帳號啟用/停用
+  joinDate: string;              // 加入日期（YYYY-MM-DD）
+  leaveDate?: string;            // 離職日期（可選）
+  notes: string;                 // 備註
+  createdAt: string;             // 建檔時間
+  updatedAt: string;             // 更新時間
+}
+
+// 員工每日紀錄
+export interface EmployeeDailyRecord {
+  id: string;                    // 紀錄 ID
+  employeeId: string;            // 關聯 EmployeeProfile.id
+  employeeName: string;          // 員工姓名
+  date: string;                  // 日期（YYYY-MM-DD）
+  data: EmployeeData;            // 當日完整數據
+  source: 'minshi' | 'yishin' | 'combined'; // 資料來源
+  createdAt: string;             // 建立時間
 }

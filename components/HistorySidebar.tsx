@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { HistoryRecord } from '../types';
 
 interface Props {
@@ -11,7 +11,25 @@ interface Props {
 }
 
 const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord, onClearAll, onExportAll }) => {
-  const sortedRecords = [...records].sort((a, b) => b.date.localeCompare(a.date));
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  // 計算41天視窗範圍
+  const filteredRecords = useMemo(() => {
+    if (showAllHistory) {
+      return records;
+    }
+
+    const today = new Date();
+    const endDate = today.toISOString().split('T')[0];
+    const startDate = new Date(today.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    return records.filter(r => {
+      if (!r.archiveDate) return true; // 舊紀錄沒有 archiveDate，預設顯示
+      return r.archiveDate >= startDate && r.archiveDate <= endDate;
+    });
+  }, [records, showAllHistory]);
+
+  const sortedRecords = [...filteredRecords].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -21,11 +39,26 @@ const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord
             <span className="mr-2">📁</span> 歷史存檔管理
           </h3>
           <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200">
-            {records.length} 筆
+            {sortedRecords.length} / {records.length} 筆
           </span>
         </div>
+
+        {/* 41天視窗開關 */}
+        <div className="flex items-center justify-between text-xs">
+          <button
+            onClick={() => setShowAllHistory(!showAllHistory)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+          >
+            <div className={`w-3 h-3 rounded-sm border-2 ${showAllHistory ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`} />
+            <span className="font-bold text-slate-700">顯示全部歷史</span>
+          </button>
+          {!showAllHistory && (
+            <span className="text-[10px] text-slate-500 font-bold">41天視窗</span>
+          )}
+        </div>
+
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={(e) => { e.preventDefault(); onExportAll(); }}
             type="button"
             className="flex-1 text-[9px] font-black tracking-widest uppercase bg-slate-200 hover:bg-slate-300 text-slate-600 py-2 rounded transition-colors"
@@ -37,30 +70,33 @@ const HistorySidebar: React.FC<Props> = ({ records, onLoadRecord, onDeleteRecord
       <div className="max-h-[400px] overflow-y-auto">
         {sortedRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs italic">
-            目前沒有歷史存檔
+            {showAllHistory ? '目前沒有歷史存檔' : '最近41天沒有存檔'}
           </div>
         ) : (
           <div className="divide-y divide-slate-50">
             {sortedRecords.map((rec) => (
-              <div 
-                key={rec.id} 
-                className="p-3 hover:bg-blue-50/30 group transition-colors cursor-pointer" 
+              <div
+                key={rec.id}
+                className="p-3 hover:bg-blue-50/30 group transition-colors cursor-pointer"
                 onClick={() => onLoadRecord(rec)}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-bold text-slate-700 truncate">{rec.title}</div>
                     <div className="text-[10px] text-slate-400">{rec.date}</div>
+                    {rec.archiveDate && (
+                      <div className="text-[10px] text-blue-600 font-bold mt-0.5">📅 {rec.archiveDate}</div>
+                    )}
                     <div className="text-[10px] font-bold text-emerald-600 mt-1">
                       {rec.totalRevenue.toLocaleString()}
                     </div>
                   </div>
-                  <button 
+                  <button
                     type="button"
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
+                    onClick={(e) => {
+                      e.stopPropagation();
                       e.preventDefault();
-                      onDeleteRecord(rec.id); 
+                      onDeleteRecord(rec.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-rose-500 transition-all"
                   >
