@@ -13,20 +13,21 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
     const [recordDates, setRecordDates] = useState<Set<string>>(new Set());
 
     // 獲取當月所有有數據的日期
+    const loadRecordDates = async () => {
+        try {
+            const records = await getAllRecordsDB();
+            const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            const dates = records
+                .filter(r => r.archiveDate?.startsWith(yearMonth) && r.dataSource === dataSource)
+                .map(r => r.archiveDate!)
+                .filter(Boolean);
+            setRecordDates(new Set(dates));
+        } catch (e) {
+            console.error('載入日期標記失敗', e);
+        }
+    };
+
     useEffect(() => {
-        const loadRecordDates = async () => {
-            try {
-                const records = await getAllRecordsDB();
-                const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-                const dates = records
-                    .filter(r => r.archiveDate?.startsWith(yearMonth) && r.dataSource === dataSource)
-                    .map(r => r.archiveDate!)
-                    .filter(Boolean);
-                setRecordDates(new Set(dates));
-            } catch (e) {
-                console.error('載入日期標記失敗', e);
-            }
-        };
         loadRecordDates();
     }, [currentYear, currentMonth, dataSource]);
 
@@ -51,7 +52,15 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
 
     const handleDateClick = async (day: number) => {
         const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        console.log('📅 點選日期:', dateStr);
+
+        // 觸發回調
         onDateSelect(dateStr, dataSource);
+
+        // 等待一下後重新載入記錄日期（以便即時更新綠色狀態）
+        setTimeout(async () => {
+            await loadRecordDates();
+        }, 500);
     };
 
     const handlePrevMonth = () => {
@@ -156,6 +165,7 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
                         <button
                             key={day}
                             onClick={() => handleDateClick(day)}
+                            title={hasData ? `${dateStr} 有數據` : `${dateStr} 無數據`}
                             className={`aspect-square flex items-center justify-center rounded-lg text-sm font-bold transition-all hover:scale-105 ${isToday
                                 ? 'bg-blue-600 text-white shadow-lg'
                                 : hasData

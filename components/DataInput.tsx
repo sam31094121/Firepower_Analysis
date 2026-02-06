@@ -9,16 +9,16 @@ interface Props {
   isAnalyzing?: boolean;
 }
 
-const EXCEL_HEADERS = ["行銷", "派單數", "派成數", "追續數", "總業績", "客單價", "追續總額", "業績排名", "追續排名", "均價排名", "派單成交率"];
+const EXCEL_HEADERS = ["行銷", "派單數", "派成數", "追續數", "總業績", "派單價值", "追續總額", "業績排名", "追續排名", "均價排名", "派單成交率"];
 const COL_COUNT = EXCEL_HEADERS.length;
 
 const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing }) => {
   const [activeTab, setActiveTab] = useState<'paste' | 'image'>('paste');
   const [loadingImage, setLoadingImage] = useState(false);
-  
+
   const createBlankRow = () => Array(COL_COUNT).fill('');
-  
-  const [gridData, setGridData] = useState<string[][]>(() => 
+
+  const [gridData, setGridData] = useState<string[][]>(() =>
     Array(3).fill(null).map(() => createBlankRow())
   );
 
@@ -47,7 +47,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
 
   const handleSubmit = () => {
     if (isAnalyzing) return;
-    
+
     const validRows = gridData.filter(row => row.some(cell => cell.trim() !== ''));
     if (validRows.length === 0) {
       alert("請輸入至少一筆數據。");
@@ -55,7 +55,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
     }
 
     const parsed: EmployeeData[] = validRows.map((row, idx) => {
-      const rev = cleanNum(row[4]); 
+      const rev = cleanNum(row[4]);
       return {
         id: `grid-${idx}-${Date.now()}`,
         name: row[0] || `員工 ${idx + 1}`,
@@ -117,7 +117,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
       const base64 = event.target?.result as string;
       try {
         const extractedRows = await extractDataFromImage(base64);
-        
+
         if (extractedRows && extractedRows.length > 0) {
           const filledGrid = extractedRows.map(row => {
             const newRow = [...row];
@@ -125,16 +125,16 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
             return newRow.slice(0, COL_COUNT);
           });
           filledGrid.push(createBlankRow());
-          
+
           setGridData(filledGrid);
-          setActiveTab('paste'); 
+          setActiveTab('paste');
           alert("AI 辨識完成！數據已填入表格，請檢查無誤後點擊「執行分析」。");
         }
-      } catch (err) { 
+      } catch (err) {
         console.error("OCR Error:", err);
-        alert("AI 辨識失敗，請確保圖片清晰或嘗試手動貼上。"); 
-      } finally { 
-        setLoadingImage(false); 
+        alert("AI 辨識失敗，請確保圖片清晰或嘗試手動貼上。");
+      } finally {
+        setLoadingImage(false);
       }
     };
     reader.readAsDataURL(file);
@@ -166,7 +166,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
                       <td className="bg-slate-50 text-slate-400 font-mono text-center p-2 group-hover:text-blue-500 text-[9px] border-r border-slate-200">{rIdx + 1}</td>
                       {row.map((cell, cIdx) => (
                         <td key={cIdx} className="p-0 border-r border-slate-100">
-                          <input 
+                          <input
                             type="text"
                             value={cell}
                             disabled={isAnalyzing}
@@ -182,7 +182,7 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
             </div>
 
             <div className="flex gap-4">
-              <button 
+              <button
                 type="button"
                 onClick={handleClear}
                 disabled={isAnalyzing}
@@ -190,9 +190,9 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
               >
                 🗑️ 清空表格
               </button>
-              <button 
+              <button
                 type="button"
-                onClick={handleSubmit} 
+                onClick={handleSubmit}
                 disabled={isAnalyzing}
                 className={`flex-1 font-black py-4 rounded-xl transition-all shadow-xl active:scale-95 flex items-center justify-center space-x-3 ${isAnalyzing ? 'bg-slate-700 cursor-not-allowed text-slate-300' : 'bg-slate-900 text-white hover:bg-blue-600'}`}
               >
@@ -202,11 +202,11 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>🧠分析中..</span>
+                    <span>載入中..</span>
                   </>
                 ) : (
                   <>
-                    <span>🚀火力分析</span>
+                    <span>📥 資料載入</span>
                   </>
                 )}
               </button>

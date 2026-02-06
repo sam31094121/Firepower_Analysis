@@ -33,6 +33,12 @@ const App: React.FC = () => {
   const [currentDataSource, setCurrentDataSource] = useState<'minshi' | 'yishin' | 'combined'>('combined');
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
+  // 雙視角數據系統
+  const [dataView, setDataView] = useState<'raw' | 'analyzed'>('raw');  // 當前視角
+  const [rawData, setRawData] = useState<EmployeeData[]>([]);  // 當日原始數據
+  const [analyzed41DaysData, setAnalyzed41DaysData] = useState<EmployeeData[]>([]);  // 41天分析結果
+  const [isAnalyzed, setIsAnalyzed] = useState(false);  // 是否已分析
+
   // 員工系統 state
   const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeProfile | null>(null);
@@ -64,47 +70,56 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleDataLoaded = useCallback(async (newData: EmployeeData[]) => {
+  // 📥 資料載入（不執行 AI 分析）
+  const handleDataLoad = useCallback(async (newData: EmployeeData[]) => {
+    const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+    const dataSourceLabel = currentDataSource === 'minshi' ? '民視表' : currentDataSource === 'yishin' ? '奕心表' : '總和表';
+    const title = `${archiveDate} ${dataSourceLabel}`;
+
+    // 檢查是否已有數據
+    const existingRecord = await getRecordByDateDB(archiveDate, currentDataSource);
+    if (existingRecord) {
+      const dataCount = existingRecord.rawData?.length || existingRecord.data?.length || 0;
+      const statusText = existingRecord.isAnalyzed ? '✓ 已分析' : '⚠️ 未分析';
+      const confirm = window.confirm(
+        `該日期 (${archiveDate} ${dataSourceLabel}) 已有數據\n` +
+        `現有數據：${dataCount} 名員工 ${statusText}\n\n` +
+        `是否要覆蓋？`
+      );
+      if (!confirm) {
+        showToast("已取消載入", "error");
+        return;
+      }
+    }
+
     setEmployees(newData);
-    setCurrentTitle(`待分析報表 ${new Date().toLocaleTimeString()}`);
-    setIsAnalyzing(true);
-    showToast("AI 深度分析中，請稍候...", "loading");
+    setCurrentTitle(title);
+    setIsSaving(true);
 
     try {
-      const analyzedData = await analyzePerformance(newData);
-      setEmployees(analyzedData);
-
-      // 自動存檔：使用選定的日期與表格類型
-      const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
-      const dataSourceLabel = currentDataSource === 'minshi' ? '民視表' : currentDataSource === 'yishin' ? '奕心表' : '總和表';
-      const title = `${archiveDate} ${dataSourceLabel}`;
-
-      setCurrentTitle(title);
-      setIsSaving(true);
-
       const newRecord: HistoryRecord = {
-        id: `rec-${Date.now()}`,
+        id: existingRecord?.id || `rec-${Date.now()}`,
         title: title,
         date: new Date().toLocaleString(),
         archiveDate: archiveDate,
         dataSource: currentDataSource,
-        data: JSON.parse(JSON.stringify(analyzedData)),
-        totalRevenue: analyzedData.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
+        data: JSON.parse(JSON.stringify(newData)),  // 向下相容
+        rawData: JSON.parse(JSON.stringify(newData)),  // 當日原始數據
+        analyzed41DaysData: undefined,  // 尚未分析
+        isAnalyzed: false,
+        totalRevenue: newData.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
       };
 
       await saveRecordDB(newRecord);
       await refreshHistory();
 
-      // ==================== 員工自動建檔邏輯 ====================
+      // 員工建檔：儲存當日原始數據
       try {
-        for (const empData of analyzedData) {
-          const empId = empData.name; // 使用姓名作為 ID
-
-          // 檢查員工檔案是否存在
+        for (const empData of newData) {
+          const empId = empData.name;
           let empProfile = await getEmployeeProfileDB(empId);
 
           if (!empProfile) {
-            // 不存在：建立新檔案
             empProfile = {
               id: empId,
               name: empData.name,
@@ -118,39 +133,397 @@ const App: React.FC = () => {
             await createEmployeeProfileDB(empProfile);
             console.log(`✅ 自動建檔：${empData.name}`);
           } else {
-            // 存在：更新時間
             empProfile.updatedAt = new Date().toISOString();
             await updateEmployeeProfileDB(empProfile);
           }
 
-          // 儲存員工每日紀錄
           const dailyRecord: EmployeeDailyRecord = {
             id: `${empId}-${archiveDate}-${currentDataSource}`,
             employeeId: empId,
             employeeName: empData.name,
             date: archiveDate,
-            data: empData,
+            data: empData,  // 向下相容
+            rawData: empData,  // 當日原始數據
+            analyzed41DaysData: undefined,  // 尚未分析
             source: currentDataSource,
             createdAt: new Date().toISOString()
           };
           await saveEmployeeDailyRecordDB(dailyRecord);
         }
-        console.log(`✅ 員工建檔完成：共 ${analyzedData.length} 名`);
+        console.log(`✅ 員工建檔完成：共 ${newData.length} 名`);
       } catch (error) {
         console.error('員工建檔失敗', error);
       }
-      // ==================== 員工自動建檔邏輯結束 ====================
 
+      localStorage.setItem('marketing_firepower_last_session', JSON.stringify({ title, data: newData }));
 
-      localStorage.setItem('marketing_firepower_last_session', JSON.stringify({ title, data: analyzedData }));
-      showToast("✅ AI 分析完畢並自動存檔");
+      // 更新雙視角狀態
+      setRawData([...newData]);
+      setAnalyzed41DaysData([]);
+      setIsAnalyzed(false);
+      setDataView('raw');
+
+      showToast(`✅ 數據已載入並存檔 (${newData.length} 名員工)`);
     } catch (error: any) {
-      showToast(error.message || "AI 分類失敗，請檢查網路狀態", "error");
+      showToast(error.message || "存檔失敗", "error");
     } finally {
-      setIsAnalyzing(false);
       setIsSaving(false);
     }
   }, [showToast, currentArchiveDate, currentDataSource]);
+
+  // 🧠 AI 分析（整合歷史數據）
+  const handleAIAnalyze = useCallback(async () => {
+    // 檢查是否有已載入的數據
+    if (rawData.length === 0 && employees.length === 0) {
+      showToast("請先載入數據", "error");
+      return;
+    }
+
+    setIsAnalyzing(true);
+
+    try {
+      // 1. 使用已載入的 rawData（當日數據）
+      const currentData = rawData.length > 0 ? rawData : employees;
+      console.log('🧠 開始 AI 分析');
+      console.log('  - 當日數據筆數:', currentData.length);
+
+      // 2. 從資料庫抓取所有歷史數據
+      const { getAllRecordsDB } = await import('./services/dbService');
+      const allRecords = await getAllRecordsDB();
+
+      console.log('  - 資料庫總記錄數:', allRecords.length);
+
+      // 計算日期範圍：使用當前載入的日期往前推 40 天
+      const baseDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+      const baseDateObj = new Date(baseDate);
+      const startDate = new Date(baseDateObj.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const endDate = baseDate;
+
+      console.log('  - 基準日期:', baseDate);
+      console.log('  - 日期範圍:', startDate, '~', endDate);
+      console.log('  - 當前數據源:', currentDataSource);
+
+      // 過濾：1) 有 archiveDate，2) 在日期範圍內，3) 數據源匹配
+      const historicalRecords = allRecords.filter(r => {
+        if (!r.archiveDate) {
+          console.log('  ⚠️ 記錄缺少 archiveDate:', r.title);
+          return false;
+        }
+
+        // 檢查日期範圍
+        if (r.archiveDate < startDate || r.archiveDate > endDate) {
+          return false;
+        }
+
+        // 檢查數據源匹配
+        if (r.dataSource !== currentDataSource) {
+          return false;
+        }
+
+        return true;
+      });
+
+      // 計算實際有數據的記錄數
+      const actualRecordsCount = historicalRecords.length;
+      console.log('  - 過濾後記錄筆數:', actualRecordsCount);
+      console.log('  - 歷史記錄:', historicalRecords.map(r => `${r.archiveDate} (${r.dataSource})`).join(', '));
+
+      // 顯示提示
+      if (actualRecordsCount === 0) {
+        showToast("AI 分析中（僅使用當日數據）...", "loading");
+      } else if (actualRecordsCount < 10) {
+        showToast(`AI 分析中（已抓取現有資料 ${actualRecordsCount} 筆）...`, "loading");
+      } else {
+        showToast(`AI 分析中（整合 ${actualRecordsCount} 筆歷史數據）...`, "loading");
+      }
+
+      // 3. 彙總歷史數據（按員工姓名分組）
+      const employeeMap = new Map<string, any>();
+
+      historicalRecords.forEach((record, index) => {
+        const dataToUse = record.rawData || record.data;
+        console.log(`  - 記錄 ${index + 1} (${record.archiveDate}):`, {
+          hasRawData: !!record.rawData,
+          hasData: !!record.data,
+          usingRawData: !!record.rawData,
+          employeeCount: dataToUse.length,
+          firstEmployee: dataToUse[0] ? {
+            name: dataToUse[0].name,
+            todayLeads: dataToUse[0].todayLeads,
+            todaySales: dataToUse[0].todaySales,
+            todayNetRevenue: dataToUse[0].todayNetRevenue
+          } : null
+        });
+
+        dataToUse.forEach((emp: any) => {
+          const existing = employeeMap.get(emp.name);
+          if (!existing) {
+            // 第一次遇到此員工，只保留需要累加的原始數據欄位
+            employeeMap.set(emp.name, {
+              name: emp.name,
+              todayLeads: emp.todayLeads || 0,
+              todaySales: emp.todaySales || 0,
+              todayNetRevenue: emp.todayNetRevenue || 0,
+              followupCount: emp.followupCount || 0,
+              todayFollowupSales: emp.todayFollowupSales || 0,
+              monthlyTotalLeads: emp.monthlyTotalLeads || 0,
+              monthlyLeadSales: emp.monthlyLeadSales || 0,
+              monthlyFollowupSales: emp.monthlyFollowupSales || 0,
+              todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
+              todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
+              monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
+              monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
+              depositWithdrawal: emp.depositWithdrawal || 0,
+              accumulatedDeposit: emp.accumulatedDeposit || 0,
+              withdrawalFollowup: emp.withdrawalFollowup || 0,
+              followupAmount: emp.followupAmount || 0,
+              returnAmount: emp.returnAmount || 0,
+              monthlyActualRevenue: emp.monthlyActualRevenue || 0,
+              monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
+            });
+          } else {
+            // 累加所有原始數據欄位
+            existing.todayLeads += emp.todayLeads || 0;
+            existing.todaySales += emp.todaySales || 0;
+            existing.todayNetRevenue += emp.todayNetRevenue || 0;
+            existing.followupCount += emp.followupCount || 0;
+            existing.todayFollowupSales += emp.todayFollowupSales || 0;
+            existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
+            existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
+            existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
+            existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
+            existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
+            existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
+            existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
+            existing.depositWithdrawal += emp.depositWithdrawal || 0;
+            existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
+            existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
+            existing.followupAmount += emp.followupAmount || 0;
+            existing.returnAmount += emp.returnAmount || 0;
+            existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
+            existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+          }
+        });
+      });
+
+      // 3.2 加入當日數據（如果不在歷史記錄中）
+      console.log('  - 加入當日數據...');
+
+      // 檢查當日數據是否已經在歷史記錄中
+      const currentArchiveDateInHistory = historicalRecords.some(r => r.archiveDate === currentArchiveDate);
+
+      if (currentArchiveDateInHistory) {
+        console.log('  ⚠️ 當日數據已在歷史記錄中，跳過累加');
+      } else {
+        console.log('  ✅ 當日數據不在歷史記錄中，開始累加');
+        currentData.forEach((emp: any) => {
+          const existing = employeeMap.get(emp.name);
+
+          if (!existing) {
+            // 當日新員工，直接加入
+            employeeMap.set(emp.name, {
+              name: emp.name,
+              todayLeads: emp.todayLeads || 0,
+              todaySales: emp.todaySales || 0,
+              todayNetRevenue: emp.todayNetRevenue || 0,
+              followupCount: emp.followupCount || 0,
+              todayFollowupSales: emp.todayFollowupSales || 0,
+              monthlyTotalLeads: emp.monthlyTotalLeads || 0,
+              monthlyLeadSales: emp.monthlyLeadSales || 0,
+              monthlyFollowupSales: emp.monthlyFollowupSales || 0,
+              todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
+              todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
+              monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
+              monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
+              depositWithdrawal: emp.depositWithdrawal || 0,
+              accumulatedDeposit: emp.accumulatedDeposit || 0,
+              withdrawalFollowup: emp.withdrawalFollowup || 0,
+              followupAmount: emp.followupAmount || 0,
+              returnAmount: emp.returnAmount || 0,
+              monthlyActualRevenue: emp.monthlyActualRevenue || 0,
+              monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
+            });
+          } else {
+            // 累加當日數據
+            existing.todayLeads += emp.todayLeads || 0;
+            existing.todaySales += emp.todaySales || 0;
+            existing.todayNetRevenue += emp.todayNetRevenue || 0;
+            existing.followupCount += emp.followupCount || 0;
+            existing.todayFollowupSales += emp.todayFollowupSales || 0;
+            existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
+            existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
+            existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
+            existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
+            existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
+            existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
+            existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
+            existing.depositWithdrawal += emp.depositWithdrawal || 0;
+            existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
+            existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
+            existing.followupAmount += emp.followupAmount || 0;
+            existing.returnAmount += emp.returnAmount || 0;
+            existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
+            existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+          }
+        });
+      }
+
+      // 4. 重新計算衍生欄位（派單價值、成交率）
+      const aggregatedData = Array.from(employeeMap.values()).map(emp => {
+        // 計算成交率
+        const convRate = emp.todayLeads > 0
+          ? ((emp.todaySales / emp.todayLeads) * 100).toFixed(1)
+          : '0.0';
+
+        // 計算派單價值（總業績 ÷ 派單數）
+        const avgOrderValue = emp.todayLeads > 0
+          ? Math.round(emp.todayNetRevenue / emp.todayLeads)
+          : 0;
+
+        return {
+          ...emp,
+          todayConvRate: `${convRate}%`,
+          avgOrderValue: avgOrderValue,
+          id: `agg-${emp.name}-${Date.now()}`,
+          timestamp: Date.now(),
+          // 初始化排名欄位（稍後會計算）
+          revenueRank: '-',
+          followupRank: '-',
+          avgPriceRank: '-',
+          // 清空 AI 分析欄位（等待 AI 計算）
+          category: undefined,
+          categoryRank: undefined,
+          aiAdvice: undefined,
+          scoutAdvice: undefined
+        };
+      });
+
+      console.log('  - 彙總後員工數:', aggregatedData.length);
+
+      // 檢查是否有數據可供分析
+      if (aggregatedData.length === 0) {
+        showToast("無法彙總數據，請確認資料庫中有歷史記錄", "error");
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // 4.5 計算排名（在 AI 分析前）
+      console.log('  - 計算排名...');
+
+      // 業績排名（總業績由高到低）
+      const sortedByRevenue = [...aggregatedData].sort((a, b) => b.todayNetRevenue - a.todayNetRevenue);
+      sortedByRevenue.forEach((emp, index) => {
+        const found = aggregatedData.find(e => e.name === emp.name);
+        if (found) found.revenueRank = String(index + 1);
+      });
+
+      // 追續排名（追續總額由高到低）
+      const sortedByFollowup = [...aggregatedData].sort((a, b) => b.todayFollowupSales - a.todayFollowupSales);
+      sortedByFollowup.forEach((emp, index) => {
+        const found = aggregatedData.find(e => e.name === emp.name);
+        if (found) found.followupRank = String(index + 1);
+      });
+
+      // 均價排名（派單價值由高到低）
+      const sortedByAvgPrice = [...aggregatedData].sort((a, b) => b.avgOrderValue - a.avgOrderValue);
+      sortedByAvgPrice.forEach((emp, index) => {
+        const found = aggregatedData.find(e => e.name === emp.name);
+        if (found) found.avgPriceRank = String(index + 1);
+      });
+
+      console.log('  - 排名計算完成');
+
+      // 5. AI 分析
+      console.log('  - 開始呼叫 AI 分析...');
+      const analyzedData = await analyzePerformance(aggregatedData);
+      console.log('  - AI 分析完成，結果筆數:', analyzedData?.length || 0);
+
+      // 驗證 AI 分析結果
+      if (!analyzedData || analyzedData.length === 0) {
+        showToast("AI 分析失敗：未返回數據", "error");
+        setIsAnalyzing(false);
+        return;
+      }
+
+      setEmployees(analyzedData);
+
+      // 6. 更新記錄（標記已分析）
+      const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+      const dataSourceLabel = currentDataSource === 'minshi' ? '民視表' : currentDataSource === 'yishin' ? '奕心表' : '總和表';
+      const title = `${archiveDate} ${dataSourceLabel}`;
+
+      const existingRecord = await getRecordByDateDB(archiveDate, currentDataSource);
+
+      // 保留原始數據：優先使用 rawData state，其次是 existingRecord.rawData，最後是當前 employees
+      const preservedRawData = rawData.length > 0
+        ? rawData
+        : (existingRecord?.rawData && existingRecord.rawData.length > 0)
+          ? existingRecord.rawData
+          : currentData;
+
+      console.log('💾 準備儲存分析結果:');
+      console.log('  - preservedRawData 筆數:', preservedRawData.length);
+      console.log('  - analyzedData 筆數:', analyzedData.length);
+
+      const updatedRecord: HistoryRecord = {
+        ...(existingRecord || {}),
+        id: existingRecord?.id || `rec-${Date.now()}`,
+        title: title,
+        date: new Date().toLocaleString(),
+        archiveDate: archiveDate,
+        dataSource: currentDataSource,
+        data: JSON.parse(JSON.stringify(analyzedData)),  // 向下相容：指向分析結果
+        rawData: JSON.parse(JSON.stringify(preservedRawData)),  // 保留原始數據
+        analyzed41DaysData: JSON.parse(JSON.stringify(analyzedData)),  // 41天分析結果
+        isAnalyzed: true,
+        analyzedAt: new Date().toISOString(),
+        totalRevenue: analyzedData.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
+      };
+
+      await saveRecordDB(updatedRecord);
+      await refreshHistory();
+
+      // 4. 更新員工每日紀錄（加入 AI 建議）
+      try {
+        for (const empData of analyzedData) {
+          const empId = empData.name;
+          const dailyRecord: EmployeeDailyRecord = {
+            id: `${empId}-${archiveDate}-${currentDataSource}`,
+            employeeId: empId,
+            employeeName: empData.name,
+            date: archiveDate,
+            data: empData,  // 向下相容：指向分析結果
+            rawData: existingRecord?.data?.find(e => e.name === empData.name),  // 保留原始數據
+            analyzed41DaysData: empData,  // 41天分析結果
+            source: currentDataSource,
+            createdAt: new Date().toISOString()
+          };
+          await saveEmployeeDailyRecordDB(dailyRecord);
+        }
+        console.log(`✅ 員工分析結果已更新：共 ${analyzedData.length} 名`);
+      } catch (error) {
+        console.error('員工分析結果更新失敗', error);
+      }
+
+      localStorage.setItem('marketing_firepower_last_session', JSON.stringify({ title, data: analyzedData }));
+
+      // 更新雙視角狀態
+      console.log('📊 準備更新視角狀態:');
+      console.log('  - analyzedData 筆數:', analyzedData.length);
+      console.log('  - 前 3 筆員工:', analyzedData.slice(0, 3).map(e => e.name));
+
+      setAnalyzed41DaysData([...analyzedData]);
+      setEmployees([...analyzedData]);  // 直接設定 employees
+      setIsAnalyzed(true);
+      setDataView('analyzed');  // 分析完成後自動切換到 41 天視角
+
+      showToast("✅ AI 分析完成（基於 41 天數據）");
+    } catch (error: any) {
+      showToast(error.message || "AI 分析失敗，請檢查網路狀態", "error");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [employees, showToast, currentArchiveDate, currentDataSource]);
 
   const saveToHistory = async () => {
     if (employees.length === 0 || isSaving) return;
@@ -188,7 +561,29 @@ const App: React.FC = () => {
   };
 
   const loadRecord = (record: HistoryRecord) => {
-    setEmployees([...record.data]);
+    console.log('📂 載入記錄:', record.title);
+    console.log('  - rawData 筆數:', record.rawData?.length || record.data?.length || 0);
+    console.log('  - analyzed41DaysData 筆數:', record.analyzed41DaysData?.length || 0);
+    console.log('  - isAnalyzed:', record.isAnalyzed);
+
+    // 載入雙視角數據
+    const raw = record.rawData || record.data;
+    const analyzed = record.analyzed41DaysData;
+
+    setRawData([...raw]);
+    setAnalyzed41DaysData(analyzed ? [...analyzed] : []);
+    setIsAnalyzed(record.isAnalyzed || false);
+
+    // 根據當前視角設定顯示數據
+    if (dataView === 'analyzed' && analyzed) {
+      console.log('  → 切換到 41天分析視角');
+      setEmployees([...analyzed]);
+    } else {
+      console.log('  → 切換到當日數據視角');
+      setEmployees([...raw]);
+      setDataView('raw');  // 如果沒有分析數據，強制切換到原始視角
+    }
+
     setCurrentTitle(record.title);
     setCurrentArchiveDate(record.archiveDate || '');
     setCurrentDataSource(record.dataSource || 'combined');
@@ -274,7 +669,7 @@ const App: React.FC = () => {
             </button>
 
             <CalendarCard onDateSelect={handleDateSelect} />
-            <DataInput onDataLoaded={handleDataLoaded} isAnalyzing={isAnalyzing} />
+            <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
             <HistorySidebar
               records={history}
               onLoadRecord={loadRecord}
@@ -285,15 +680,90 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex-1">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-black text-slate-800">{currentTitle}</h2>
-              {/* 自動存檔，不需手動按鈕 */}
-              {employees.length > 0 && currentArchiveDate && (
-                <div className="text-sm text-slate-600 font-bold">
-                  📅 已存檔至：{currentArchiveDate}
-                </div>
+            {/* 標題列 */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-black text-slate-800">{currentTitle}</h2>
+                {employees.length > 0 && currentArchiveDate && (
+                  <div className="text-sm text-slate-600 font-bold">
+                    📅 {currentArchiveDate}
+                  </div>
+                )}
+              </div>
+
+              {/* AI 分析按鈕 */}
+              {employees.length > 0 && (
+                <button
+                  onClick={handleAIAnalyze}
+                  disabled={isAnalyzing}
+                  className={`px-6 py-3 rounded-xl font-black text-sm shadow-lg transition-all flex items-center gap-2 ${isAnalyzing
+                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 active:scale-95'
+                    }`}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      分析中...
+                    </>
+                  ) : (
+                    <>
+                      🧠 AI 分析 (41天)
+                    </>
+                  )}
+                </button>
               )}
             </div>
+
+            {/* 視角切換按鈕 */}
+            {employees.length > 0 && rawData.length > 0 && (
+              <div className="flex items-center gap-3 mb-6">
+                <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">數據視角:</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setDataView('raw');
+                      setEmployees([...rawData]);
+                    }}
+                    className={`px-4 py-2 rounded-lg font-bold text-xs transition-all ${dataView === 'raw'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                  >
+                    📅 當日數據
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log('🔄 切換到 41天分析視角');
+                      console.log('  - analyzed41DaysData 筆數:', analyzed41DaysData.length);
+                      console.log('  - isAnalyzed:', isAnalyzed);
+                      if (analyzed41DaysData.length > 0) {
+                        setDataView('analyzed');
+                        setEmployees([...analyzed41DaysData]);
+                        console.log('  ✅ 切換成功');
+                      } else {
+                        console.log('  ❌ 無分析數據');
+                      }
+                    }}
+                    disabled={!isAnalyzed || analyzed41DaysData.length === 0}
+                    className={`px-4 py-2 rounded-lg font-bold text-xs transition-all ${dataView === 'analyzed'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : isAnalyzed
+                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                      }`}
+                  >
+                    📈 41天分析 {!isAnalyzed && '(未分析)'}
+                  </button>
+                </div>
+                {isAnalyzed && (
+                  <span className="text-xs text-emerald-600 font-bold">✓ 已分析</span>
+                )}
+              </div>
+            )}
             <Dashboard employees={employees} />
           </div>
         </div>
@@ -303,10 +773,10 @@ const App: React.FC = () => {
       {/* 員工清單模態視窗 */}
       {showEmployeeDirectory && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col relative">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col relative overflow-hidden">
             <button
               onClick={() => setShowEmployeeDirectory(false)}
-              className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors z-10"
+              className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors z-50"
             >
               ✕
             </button>

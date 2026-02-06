@@ -130,7 +130,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
         if (e.category === EmployeeCategory.POTENTIAL) {
           const conv = parseFloat(e.todayConvRate.replace('%', ''));
 
-          // 成交率 >= 30% 且客單價高 → 歸入火力組
+          // 成交率 >= 30% 且派單價值高 → 歸入火力組
           if (conv >= 30 && e.avgOrderValue >= 5000 && cat === EmployeeCategory.FIREPOWER) return true;
           // 成交率 >= 20% 且 < 30% → 歸入穩定人選
           if (conv >= 20 && conv < 30 && cat === EmployeeCategory.STEADY) return true;
@@ -239,7 +239,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
             <div className="flex items-center space-x-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               <div className="flex items-center shrink-0">
                 <span className="w-3 h-3 bg-blue-500 rounded-sm mr-2"></span>
-                <span>客單價 (左軸)</span>
+                <span>派單價值 (左軸)</span>
               </div>
               <div className="flex items-center shrink-0">
                 <span className="w-3 h-3 bg-rose-500 rounded-full mr-2"></span>
@@ -253,7 +253,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-1">團隊平均客單價</div>
+                  <div className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-1">團隊平均派單價值</div>
                   <div className="text-2xl font-black text-blue-600 tabular-nums">
                     ${Math.round(employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / employees.length).toLocaleString()}
                   </div>
@@ -298,7 +298,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#3b82f6', fontSize: 11, fontWeight: 'black' }}
-                  label={{ value: '客單價', angle: -90, position: 'insideLeft', offset: -5, style: { fill: '#3b82f6', fontSize: 10, fontWeight: 'bold' } }}
+                  label={{ value: '派單價值', angle: -90, position: 'insideLeft', offset: -5, style: { fill: '#3b82f6', fontSize: 10, fontWeight: 'bold' } }}
                 />
                 <YAxis
                   yAxisId="right"
@@ -321,7 +321,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   fill="#3b82f6"
                   radius={[4, 4, 0, 0]}
                   barSize={40}
-                  name="客單價"
+                  name="派單價值"
                   onClick={(data) => {
                     if (data && data.id) scrollToEmployee(data.id);
                   }}
@@ -420,10 +420,10 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                             <span className="text-[9px] text-blue-400 font-bold">VS 團隊平均</span>
                           </div>
                           <div className="space-y-2">
-                            {/* 客單價對比 */}
+                            {/* 派單價值對比 */}
                             <div>
                               <div className="flex justify-between text-[9px] mb-1">
-                                <span className="text-slate-300">客單價: ${emp.avgOrderValue.toLocaleString()}</span>
+                                <span className="text-slate-300">派單價值: ${emp.avgOrderValue.toLocaleString()}</span>
                                 <span className={emp.avgOrderValue >= teamAvgAov ? 'text-emerald-400' : 'text-rose-400'}>
                                   {emp.avgOrderValue >= teamAvgAov ? '↑' : '↓'} {Math.abs(Math.round((emp.avgOrderValue / teamAvgAov - 1) * 100))}%
                                 </span>
@@ -570,7 +570,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                           <div className="text-xs font-bold text-emerald-600">{emp.todayConvRate}</div>
                         </div>
                         <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                          <div className="text-[8px] text-slate-400 font-bold uppercase">客單價</div>
+                          <div className="text-[8px] text-slate-400 font-bold uppercase">派單價值</div>
                           <div className="text-xs font-bold text-slate-800">{emp.avgOrderValue.toLocaleString()}</div>
                         </div>
                         <div className="col-span-3 bg-slate-900 px-3 py-2 rounded flex justify-between items-center">

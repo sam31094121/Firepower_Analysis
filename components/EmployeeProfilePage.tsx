@@ -146,8 +146,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                             <span className="text-3xl">👤</span>
                             {profile.name}
                             <span className={`text-sm font-bold px-3 py-1 rounded-full ${profile.status === 'active'
-                                    ? 'bg-green-100 text-green-700'
-                                    : 'bg-rose-100 text-rose-700'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-rose-100 text-rose-700'
                                 }`}>
                                 {profile.status === 'active' ? '在職' : '離職'}
                             </span>
@@ -171,8 +171,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                 key={p}
                                 onClick={() => setPeriod(p)}
                                 className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${period === p
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                                     }`}
                             >
                                 {periodLabels[p]}
@@ -187,7 +187,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                             <div className="text-2xl font-black text-blue-700">{stats.avgConvRate.toFixed(1)}%</div>
                         </div>
                         <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
-                            <div className="text-xs text-green-600 font-black uppercase mb-1">平均客單價</div>
+                            <div className="text-xs text-green-600 font-black uppercase mb-1">平均派單價值</div>
                             <div className="text-2xl font-black text-green-700">${Math.round(stats.avgOrderValue).toLocaleString()}</div>
                         </div>
                         <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
@@ -247,7 +247,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派單</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派成</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">成交率</th>
-                                        <th className="px-4 py-2 text-right font-black text-slate-700">客單價</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">派單價值</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">總業績</th>
                                     </tr>
                                 </thead>
@@ -286,8 +286,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                     <button
                                         onClick={() => setProfile({ ...profile, status: 'active', leaveDate: undefined })}
                                         className={`flex-1 py-2 px-4 rounded-lg font-bold transition-all ${profile.status === 'active'
-                                                ? 'bg-green-600 text-white'
-                                                : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                            ? 'bg-green-600 text-white'
+                                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
                                             }`}
                                     >
                                         在職
@@ -300,8 +300,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                             }
                                         }}
                                         className={`flex-1 py-2 px-4 rounded-lg font-bold transition-all ${profile.status === 'inactive'
-                                                ? 'bg-rose-600 text-white'
-                                                : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                            ? 'bg-rose-600 text-white'
+                                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
                                             }`}
                                     >
                                         離職
@@ -316,8 +316,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                     <button
                                         onClick={() => setProfile({ ...profile, accountStatus: 'enabled' })}
                                         className={`flex-1 py-2 px-4 rounded-lg font-bold transition-all ${profile.accountStatus === 'enabled'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
                                             }`}
                                     >
                                         啟用
@@ -325,8 +325,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                     <button
                                         onClick={() => setProfile({ ...profile, accountStatus: 'disabled' })}
                                         className={`flex-1 py-2 px-4 rounded-lg font-bold transition-all ${profile.accountStatus === 'disabled'
-                                                ? 'bg-amber-600 text-white'
-                                                : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                            ? 'bg-amber-600 text-white'
+                                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
                                             }`}
                                     >
                                         停用

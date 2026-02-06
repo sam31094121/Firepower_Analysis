@@ -40,7 +40,7 @@ const checkApiKey = () => {
 const generateScript = (emp: EmployeeData): string => {
     return `
     ${emp.name}，今日關鍵指標為：
-    派單數 ${emp.todayLeads} 單，成交率 ${emp.todayConvRate}，客單價 ${emp.avgOrderValue.toLocaleString()} 元。
+    派單數 ${emp.todayLeads} 單，成交率 ${emp.todayConvRate}，派單價值 ${emp.avgOrderValue.toLocaleString()} 元。
     目前歸類為「${emp.category}」，業績排名第 ${emp.revenueRank} 名。
     AI 建議：${emp.aiAdvice}
   `.trim();

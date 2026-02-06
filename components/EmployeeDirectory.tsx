@@ -46,7 +46,7 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
 
             return true;
         })
-        .sort((a, b) => a.name.localeCompare(b.name, '繁體中文'));
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'));
 
     return (
         <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 flex flex-col h-full">
@@ -76,8 +76,8 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                     <button
                         onClick={() => setStatusFilter('active')}
                         className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${statusFilter === 'active'
-                                ? 'bg-green-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                     >
                         在職
@@ -85,8 +85,8 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                     <button
                         onClick={() => setStatusFilter('inactive')}
                         className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${statusFilter === 'inactive'
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                     >
                         離職
@@ -94,8 +94,8 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                     <button
                         onClick={() => setStatusFilter('all')}
                         className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${statusFilter === 'all'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                     >
                         全部
@@ -121,8 +121,8 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                                     <div className="flex items-center gap-2 mb-1">
                                         <h3 className="font-black text-slate-900 text-base">{emp.name}</h3>
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${emp.status === 'active'
-                                                ? 'bg-green-100 text-green-700'
-                                                : 'bg-rose-100 text-rose-700'
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-rose-100 text-rose-700'
                                             }`}>
                                             {emp.status === 'active' ? '在職' : '離職'}
                                         </span>
