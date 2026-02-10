@@ -23,7 +23,13 @@ const COLLECTION_EMPLOYEE_DAILY_RECORDS = "employeeDailyRecords";
 export const saveRecordDB = async (record: HistoryRecord): Promise<void> => {
   try {
     const recordRef = doc(db, COLLECTION_RECORDS, record.id);
-    await setDoc(recordRef, record);
+
+    // 清理資料:移除 undefined 值 (Firestore 不接受 undefined)
+    const cleanRecord = JSON.parse(JSON.stringify(record, (key, value) => {
+      return value === undefined ? null : value;
+    }));
+
+    await setDoc(recordRef, cleanRecord);
     console.log("Firestore: 記錄已儲存:", record.title);
   } catch (error) {
     console.error("Firestore: 儲存失敗", error);
@@ -136,7 +142,8 @@ export const getRecordsLast41DaysDB = async (): Promise<HistoryRecord[]> => {
 export const createEmployeeProfileDB = async (profile: EmployeeProfile): Promise<void> => {
   try {
     const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, profile.id);
-    await setDoc(profileRef, profile);
+    const cleanProfile = JSON.parse(JSON.stringify(profile, (key, value) => value === undefined ? null : value));
+    await setDoc(profileRef, cleanProfile);
     console.log("Firestore: 員工檔案已建立:", profile.name);
   } catch (error) {
     console.error("Firestore: 建立員工檔案失敗", error);
@@ -147,7 +154,8 @@ export const createEmployeeProfileDB = async (profile: EmployeeProfile): Promise
 export const updateEmployeeProfileDB = async (profile: EmployeeProfile): Promise<void> => {
   try {
     const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, profile.id);
-    await setDoc(profileRef, profile, { merge: true });
+    const cleanProfile = JSON.parse(JSON.stringify(profile, (key, value) => value === undefined ? null : value));
+    await setDoc(profileRef, cleanProfile, { merge: true });
     console.log("Firestore: 員工檔案已更新:", profile.name);
   } catch (error) {
     console.error("Firestore: 更新員工檔案失敗", error);
@@ -198,7 +206,8 @@ export const deleteEmployeeProfileDB = async (id: string): Promise<void> => {
 export const saveEmployeeDailyRecordDB = async (record: EmployeeDailyRecord): Promise<void> => {
   try {
     const recordRef = doc(db, COLLECTION_EMPLOYEE_DAILY_RECORDS, record.id);
-    await setDoc(recordRef, record);
+    const cleanRecord = JSON.parse(JSON.stringify(record, (key, value) => value === undefined ? null : value));
+    await setDoc(recordRef, cleanRecord);
   } catch (error) {
     console.error("Firestore: 儲存員工每日紀錄失敗", error);
     throw new Error("儲存員工每日紀錄失敗");
