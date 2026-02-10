@@ -43,6 +43,9 @@ const App: React.FC = () => {
   const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeProfile | null>(null);
 
+  // 月曆刷新觸發器
+  const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
+
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'loading' = 'success') => {
     setNotification({ message, type });
     if (type !== 'loading') {
@@ -162,6 +165,9 @@ const App: React.FC = () => {
       setAnalyzed41DaysData([]);
       setIsAnalyzed(false);
       setDataView('raw');
+
+      // 觸發月曆刷新,讓新載入的日期即時變綠色
+      setCalendarRefreshTrigger(prev => prev + 1);
 
       showToast(`✅ 數據已載入並存檔 (${newData.length} 名員工)`);
     } catch (error: any) {
@@ -668,7 +674,7 @@ const App: React.FC = () => {
               員工清單
             </button>
 
-            <CalendarCard onDateSelect={handleDateSelect} />
+            <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} />
             <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
             <HistorySidebar
               records={history}

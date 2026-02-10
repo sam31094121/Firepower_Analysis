@@ -1,0 +1,57 @@
+{
+    "indexes": [
+        {
+            "collectionGroup": "records",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "archiveDate",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "dataSource",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "records",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "archiveDate",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "employeeDailyRecords",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "employeeId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "employeeDailyRecords",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "date",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "source",
+                    "order": "ASCENDING"
+                }
+            ]
+        }
+    ],
+    "fieldOverrides": []
+}

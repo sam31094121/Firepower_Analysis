@@ -4,13 +4,15 @@ import { HistoryRecord } from '../types';
 
 interface CalendarCardProps {
     onDateSelect: (date: string, dataSource: 'minshi' | 'yishin' | 'combined') => void;
+    refreshTrigger?: number; // 用於觸發重新載入日期標記
 }
 
-const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
+const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigger }) => {
     const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
     const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
     const [dataSource, setDataSource] = useState<'minshi' | 'yishin' | 'combined'>('combined');
     const [recordDates, setRecordDates] = useState<Set<string>>(new Set());
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
     // 獲取當月所有有數據的日期
     const loadRecordDates = async () => {
@@ -29,7 +31,7 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
 
     useEffect(() => {
         loadRecordDates();
-    }, [currentYear, currentMonth, dataSource]);
+    }, [currentYear, currentMonth, dataSource, refreshTrigger]);
 
     // 生成月曆格子
     const generateCalendar = () => {
@@ -53,6 +55,9 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
     const handleDateClick = async (day: number) => {
         const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         console.log('📅 點選日期:', dateStr);
+
+        // 設定選中日期
+        setSelectedDate(dateStr);
 
         // 觸發回調
         onDateSelect(dateStr, dataSource);
@@ -160,6 +165,7 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
                         day === new Date().getDate() &&
                         currentMonth === new Date().getMonth() + 1 &&
                         currentYear === new Date().getFullYear();
+                    const isSelected = selectedDate === dateStr;
 
                     return (
                         <button
@@ -171,6 +177,13 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect }) => {
                                 : hasData
                                     ? 'bg-green-100 text-green-700 border-2 border-green-400'
                                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                } ${isSelected
+                                    ? isToday
+                                        ? 'ring-2 ring-offset-2 ring-blue-400'
+                                        : hasData
+                                            ? 'ring-2 ring-offset-2 ring-green-500'
+                                            : 'ring-2 ring-offset-2 ring-slate-400'
+                                    : ''
                                 }`}
                         >
                             {day}

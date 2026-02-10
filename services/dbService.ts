@@ -1,122 +1,75 @@
-
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  writeBatch
+} from 'firebase/firestore';
+import { db } from './firebaseConfig';
 import { HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from "../types";
 
-const DB_NAME = "MarketingFirepowerDB";
-const STORE_NAME = "history";
-const STORE_EMPLOYEE_PROFILES = "employeeProfiles";
-const STORE_EMPLOYEE_DAILY_RECORDS = "employeeDailyRecords";
-const DB_VERSION = 4; // 提升版本以新增員工相關 stores
+// Collection 名稱
+const COLLECTION_RECORDS = "records";
+const COLLECTION_EMPLOYEE_PROFILES = "employeeProfiles";
+const COLLECTION_EMPLOYEE_DAILY_RECORDS = "employeeDailyRecords";
 
-let dbInstance: IDBDatabase | null = null;
-
-export const initDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    if (dbInstance) return resolve(dbInstance);
-
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-
-      // 歷史紀錄 store
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
-        console.log("IndexedDB: history store created.");
-      }
-
-      // 員工檔案 store
-      if (!db.objectStoreNames.contains(STORE_EMPLOYEE_PROFILES)) {
-        db.createObjectStore(STORE_EMPLOYEE_PROFILES, { keyPath: "id" });
-        console.log("IndexedDB: employeeProfiles store created.");
-      }
-
-      // 員工每日紀錄 store
-      if (!db.objectStoreNames.contains(STORE_EMPLOYEE_DAILY_RECORDS)) {
-        const store = db.createObjectStore(STORE_EMPLOYEE_DAILY_RECORDS, { keyPath: "id" });
-        store.createIndex("employeeId", "employeeId", { unique: false });
-        store.createIndex("date", "date", { unique: false });
-        console.log("IndexedDB: employeeDailyRecords store created.");
-      }
-    };
-
-    request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(dbInstance);
-    };
-
-    request.onerror = (event) => {
-      console.error("IndexedDB: Open Error", event);
-      reject("無法開啟資料庫");
-    };
-  });
-};
+// ==================== 歷史記錄管理函數 ====================
 
 export const saveRecordDB = async (record: HistoryRecord): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    try {
-      const transaction = db.transaction(STORE_NAME, "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-
-      // 深拷貝確保數據純淨
-      const clonedRecord = JSON.parse(JSON.stringify(record));
-      const request = store.put(clonedRecord);
-
-      transaction.oncomplete = () => {
-        console.log("IndexedDB: Transaction complete, saved:", record.title);
-        resolve();
-      };
-
-      transaction.onerror = (event) => {
-        console.error("IndexedDB: Transaction Error", event);
-        reject("交易執行失敗");
-      };
-
-      request.onerror = (event) => {
-        console.error("IndexedDB: Request Error", event);
-        reject("寫入請求失敗");
-      };
-    } catch (e) {
-      console.error("IndexedDB: Save Exception", e);
-      reject(e);
-    }
-  });
+  try {
+    const recordRef = doc(db, COLLECTION_RECORDS, record.id);
+    await setDoc(recordRef, record);
+    console.log("Firestore: 記錄已儲存:", record.title);
+  } catch (error) {
+    console.error("Firestore: 儲存失敗", error);
+    throw new Error("儲存記錄失敗");
+  }
 };
 
 export const getAllRecordsDB = async (): Promise<HistoryRecord[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject("載入歷史紀錄失敗");
-  });
+  try {
+    const recordsRef = collection(db, COLLECTION_RECORDS);
+    const snapshot = await getDocs(recordsRef);
+    const records = snapshot.docs.map(doc => doc.data() as HistoryRecord);
+    return records;
+  } catch (error) {
+    console.error("Firestore: 載入記錄失敗", error);
+    throw new Error("載入歷史紀錄失敗");
+  }
 };
 
 export const deleteRecordDB = async (id: string): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete(id);
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("刪除失敗");
-  });
+  try {
+    const recordRef = doc(db, COLLECTION_RECORDS, id);
+    await deleteDoc(recordRef);
+    console.log("Firestore: 記錄已刪除:", id);
+  } catch (error) {
+    console.error("Firestore: 刪除失敗", error);
+    throw new Error("刪除失敗");
+  }
 };
 
 export const clearAllRecordsDB = async (): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.clear();
+  try {
+    const recordsRef = collection(db, COLLECTION_RECORDS);
+    const snapshot = await getDocs(recordsRef);
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("清空資料庫失敗");
-  });
+    const batch = writeBatch(db);
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+    console.log("Firestore: 所有記錄已清空");
+  } catch (error) {
+    console.error("Firestore: 清空失敗", error);
+    throw new Error("清空資料庫失敗");
+  }
 };
 
 // 根據歸檔日期查詢紀錄（YYYY-MM-DD）
@@ -124,43 +77,50 @@ export const getRecordByDateDB = async (
   archiveDate: string,
   dataSource?: 'minshi' | 'yishin' | 'combined'
 ): Promise<HistoryRecord | null> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
+  try {
+    const recordsRef = collection(db, COLLECTION_RECORDS);
+    let q;
 
-    request.onsuccess = () => {
-      const records: HistoryRecord[] = request.result || [];
-      const found = records.find(r => {
-        const dateMatch = r.archiveDate === archiveDate;
-        if (!dataSource) return dateMatch;
-        return dateMatch && r.dataSource === dataSource;
-      });
-      resolve(found || null);
-    };
-    request.onerror = () => reject("查詢失敗");
-  });
+    if (dataSource) {
+      q = query(
+        recordsRef,
+        where("archiveDate", "==", archiveDate),
+        where("dataSource", "==", dataSource)
+      );
+    } else {
+      q = query(recordsRef, where("archiveDate", "==", archiveDate));
+    }
+
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    return snapshot.docs[0].data() as HistoryRecord;
+  } catch (error) {
+    console.error("Firestore: 查詢失敗", error);
+    throw new Error("查詢失敗");
+  }
 };
 
 // 查詢日期範圍內的紀錄（startDate 到 endDate，含首尾）
 export const getRecordsInRangeDB = async (startDate: string, endDate: string): Promise<HistoryRecord[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
+  try {
+    const recordsRef = collection(db, COLLECTION_RECORDS);
+    const q = query(
+      recordsRef,
+      where("archiveDate", ">=", startDate),
+      where("archiveDate", "<=", endDate),
+      orderBy("archiveDate", "desc")
+    );
 
-    request.onsuccess = () => {
-      const records: HistoryRecord[] = request.result || [];
-      const filtered = records.filter(r => {
-        if (!r.archiveDate) return false;
-        return r.archiveDate >= startDate && r.archiveDate <= endDate;
-      });
-      resolve(filtered.sort((a, b) => (b.archiveDate || '').localeCompare(a.archiveDate || '')));
-    };
-    request.onerror = () => reject("範圍查詢失敗");
-  });
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as HistoryRecord);
+  } catch (error) {
+    console.error("Firestore: 範圍查詢失敗", error);
+    throw new Error("範圍查詢失敗");
+  }
 };
 
 // 查詢最近41天紀錄（今天 + 過去40天）
@@ -174,77 +134,75 @@ export const getRecordsLast41DaysDB = async (): Promise<HistoryRecord[]> => {
 // ==================== 員工檔案管理函數 ====================
 
 export const createEmployeeProfileDB = async (profile: EmployeeProfile): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_PROFILES, "readwrite");
-    const store = transaction.objectStore(STORE_EMPLOYEE_PROFILES);
-    const request = store.add(profile);
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("建立員工檔案失敗");
-  });
+  try {
+    const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, profile.id);
+    await setDoc(profileRef, profile);
+    console.log("Firestore: 員工檔案已建立:", profile.name);
+  } catch (error) {
+    console.error("Firestore: 建立員工檔案失敗", error);
+    throw new Error("建立員工檔案失敗");
+  }
 };
 
 export const updateEmployeeProfileDB = async (profile: EmployeeProfile): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_PROFILES, "readwrite");
-    const store = transaction.objectStore(STORE_EMPLOYEE_PROFILES);
-    const request = store.put(profile);
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("更新員工檔案失敗");
-  });
+  try {
+    const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, profile.id);
+    await setDoc(profileRef, profile, { merge: true });
+    console.log("Firestore: 員工檔案已更新:", profile.name);
+  } catch (error) {
+    console.error("Firestore: 更新員工檔案失敗", error);
+    throw new Error("更新員工檔案失敗");
+  }
 };
 
 export const getEmployeeProfileDB = async (id: string): Promise<EmployeeProfile | null> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_PROFILES, "readonly");
-    const store = transaction.objectStore(STORE_EMPLOYEE_PROFILES);
-    const request = store.get(id);
+  try {
+    const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, id);
+    const snapshot = await getDoc(profileRef);
 
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject("查詢員工檔案失敗");
-  });
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    return snapshot.data() as EmployeeProfile;
+  } catch (error) {
+    console.error("Firestore: 查詢員工檔案失敗", error);
+    throw new Error("查詢員工檔案失敗");
+  }
 };
 
 export const getAllEmployeeProfilesDB = async (): Promise<EmployeeProfile[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_PROFILES, "readonly");
-    const store = transaction.objectStore(STORE_EMPLOYEE_PROFILES);
-    const request = store.getAll();
-
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject("載入員工清單失敗");
-  });
+  try {
+    const profilesRef = collection(db, COLLECTION_EMPLOYEE_PROFILES);
+    const snapshot = await getDocs(profilesRef);
+    return snapshot.docs.map(doc => doc.data() as EmployeeProfile);
+  } catch (error) {
+    console.error("Firestore: 載入員工清單失敗", error);
+    throw new Error("載入員工清單失敗");
+  }
 };
 
 export const deleteEmployeeProfileDB = async (id: string): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_PROFILES, "readwrite");
-    const store = transaction.objectStore(STORE_EMPLOYEE_PROFILES);
-    const request = store.delete(id);
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("刪除員工檔案失敗");
-  });
+  try {
+    const profileRef = doc(db, COLLECTION_EMPLOYEE_PROFILES, id);
+    await deleteDoc(profileRef);
+    console.log("Firestore: 員工檔案已刪除:", id);
+  } catch (error) {
+    console.error("Firestore: 刪除員工檔案失敗", error);
+    throw new Error("刪除員工檔案失敗");
+  }
 };
 
 // ==================== 員工每日紀錄管理函數 ====================
 
 export const saveEmployeeDailyRecordDB = async (record: EmployeeDailyRecord): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_DAILY_RECORDS, "readwrite");
-    const store = transaction.objectStore(STORE_EMPLOYEE_DAILY_RECORDS);
-    const request = store.put(record);
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject("儲存員工每日紀錄失敗");
-  });
+  try {
+    const recordRef = doc(db, COLLECTION_EMPLOYEE_DAILY_RECORDS, record.id);
+    await setDoc(recordRef, record);
+  } catch (error) {
+    console.error("Firestore: 儲存員工每日紀錄失敗", error);
+    throw new Error("儲存員工每日紀錄失敗");
+  }
 };
 
 export const getEmployeeDailyRecordsDB = async (
@@ -252,39 +210,48 @@ export const getEmployeeDailyRecordsDB = async (
   startDate: string,
   endDate: string
 ): Promise<EmployeeDailyRecord[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_DAILY_RECORDS, "readonly");
-    const store = transaction.objectStore(STORE_EMPLOYEE_DAILY_RECORDS);
-    const index = store.index("employeeId");
-    const request = index.getAll(employeeId);
+  try {
+    const recordsRef = collection(db, COLLECTION_EMPLOYEE_DAILY_RECORDS);
+    const q = query(
+      recordsRef,
+      where("employeeId", "==", employeeId),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "desc")
+    );
 
-    request.onsuccess = () => {
-      const records: EmployeeDailyRecord[] = request.result || [];
-      const filtered = records.filter(r => r.date >= startDate && r.date <= endDate);
-      resolve(filtered.sort((a, b) => b.date.localeCompare(a.date)));
-    };
-    request.onerror = () => reject("查詢員工每日紀錄失敗");
-  });
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as EmployeeDailyRecord);
+  } catch (error) {
+    console.error("Firestore: 查詢員工每日紀錄失敗", error);
+    throw new Error("查詢員工每日紀錄失敗");
+  }
 };
 
 export const getEmployeeLatestRecordDB = async (employeeId: string): Promise<EmployeeDailyRecord | null> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_EMPLOYEE_DAILY_RECORDS, "readonly");
-    const store = transaction.objectStore(STORE_EMPLOYEE_DAILY_RECORDS);
-    const index = store.index("employeeId");
-    const request = index.getAll(employeeId);
+  try {
+    const recordsRef = collection(db, COLLECTION_EMPLOYEE_DAILY_RECORDS);
+    const q = query(
+      recordsRef,
+      where("employeeId", "==", employeeId),
+      orderBy("date", "desc")
+    );
 
-    request.onsuccess = () => {
-      const records: EmployeeDailyRecord[] = request.result || [];
-      if (records.length === 0) {
-        resolve(null);
-      } else {
-        const sorted = records.sort((a, b) => b.date.localeCompare(a.date));
-        resolve(sorted[0]);
-      }
-    };
-    request.onerror = () => reject("查詢員工最新紀錄失敗");
-  });
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    return snapshot.docs[0].data() as EmployeeDailyRecord;
+  } catch (error) {
+    console.error("Firestore: 查詢員工最新紀錄失敗", error);
+    throw new Error("查詢員工最新紀錄失敗");
+  }
+};
+
+// 保留舊的 initDB 函數以向下相容（但實際上不需要初始化）
+export const initDB = async (): Promise<any> => {
+  console.log("Firestore: 使用雲端資料庫,無需初始化");
+  return Promise.resolve(null);
 };
