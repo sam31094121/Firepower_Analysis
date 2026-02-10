@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 
@@ -24,9 +24,8 @@ if (missingVars.length > 0) {
 }
 
 // 初始化 Firebase
-const app = initializeApp(firebaseConfig);
-
-// 初始化 Firestore
+// 100% 正確的單例模式初始化
+export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 // 初始化 Analytics (可選)
