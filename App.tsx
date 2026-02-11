@@ -376,12 +376,12 @@ const App: React.FC = () => {
 
       // 4. 重新計算衍生欄位（派單價值、成交率）
       const aggregatedData = Array.from(employeeMap.values()).map(emp => {
-        // 計算成交率
+        // 計算成交率 (基於累加後的數據)
         const convRate = emp.todayLeads > 0
           ? ((emp.todaySales / emp.todayLeads) * 100).toFixed(1)
           : '0.0';
 
-        // 計算派單價值（總業績 ÷ 派單數）
+        // 計算派單價值 (總業績 ÷ 派單數,基於累加後的數據)
         const avgOrderValue = emp.todayLeads > 0
           ? Math.round(emp.todayNetRevenue / emp.todayLeads)
           : 0;
@@ -408,7 +408,7 @@ const App: React.FC = () => {
 
       // 檢查是否有數據可供分析
       if (aggregatedData.length === 0) {
-        showToast("無法彙總數據，請確認資料庫中有歷史記錄", "error");
+        showToast("無法彙總數據,請確認資料庫中有歷史記錄", "error");
         setIsAnalyzing(false);
         return;
       }
@@ -416,21 +416,21 @@ const App: React.FC = () => {
       // 4.5 計算排名（在 AI 分析前）
       console.log('  - 計算排名...');
 
-      // 業績排名（總業績由高到低）
+      // 業績排名（總業績由高到低,排名越小越好）
       const sortedByRevenue = [...aggregatedData].sort((a, b) => b.todayNetRevenue - a.todayNetRevenue);
       sortedByRevenue.forEach((emp, index) => {
         const found = aggregatedData.find(e => e.name === emp.name);
         if (found) found.revenueRank = String(index + 1);
       });
 
-      // 追續排名（追續總額由高到低）
+      // 追續排名（追續總額由高到低,排名越小越好）
       const sortedByFollowup = [...aggregatedData].sort((a, b) => b.todayFollowupSales - a.todayFollowupSales);
       sortedByFollowup.forEach((emp, index) => {
         const found = aggregatedData.find(e => e.name === emp.name);
         if (found) found.followupRank = String(index + 1);
       });
 
-      // 均價排名（派單價值由高到低）
+      // 均價排名（派單價值由高到低,排名越小越好）
       const sortedByAvgPrice = [...aggregatedData].sort((a, b) => b.avgOrderValue - a.avgOrderValue);
       sortedByAvgPrice.forEach((emp, index) => {
         const found = aggregatedData.find(e => e.name === emp.name);
