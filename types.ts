@@ -108,3 +108,21 @@ export interface EmployeeDailyRecord {
   source: 'minshi' | 'yishin' | 'combined'; // 資料來源
   createdAt: string;             // 建立時間
 }
+
+// 資料驗證相關類型
+export type ValidationErrorType = 'error' | 'warning' | 'info';
+
+export interface ValidationError {
+  type: ValidationErrorType;
+  row: number;                   // 第幾列 (從 1 開始)
+  field: string;                 // 欄位名稱
+  message: string;               // 錯誤訊息
+  employeeName?: string;         // 員工姓名
+}
+
+export interface ValidationResult {
+  isValid: boolean;              // 是否通過驗證
+  errors: ValidationError[];     // 錯誤列表
+  warnings: ValidationError[];   // 警告列表
+  infos: ValidationError[];      // 提示列表
+}

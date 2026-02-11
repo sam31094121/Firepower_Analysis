@@ -1,7 +1,9 @@
 
 import React, { useState, useCallback } from 'react';
 import { extractDataFromImage } from '../services/geminiService';
-import { EmployeeData, EmployeeCategory } from '../types';
+import { validateEmployeeData } from '../services/dataValidation';
+import { EmployeeData, EmployeeCategory, ValidationResult } from '../types';
+import ValidationModal from './ValidationModal';
 
 interface Props {
   onDataLoaded: (data: EmployeeData[]) => void;
@@ -15,6 +17,8 @@ const COL_COUNT = EXCEL_HEADERS.length;
 const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing }) => {
   const [activeTab, setActiveTab] = useState<'paste' | 'image'>('paste');
   const [loadingImage, setLoadingImage] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [pendingData, setPendingData] = useState<EmployeeData[] | null>(null);
 
   const createBlankRow = () => Array(COL_COUNT).fill('');
 
@@ -89,7 +93,30 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
       };
     });
 
-    onDataLoaded(parsed);
+    // 驗證資料
+    const result = validateEmployeeData(parsed);
+
+    if (!result.isValid || result.infos.length > 0) {
+      // 有錯誤或提示,顯示 Modal
+      setValidationResult(result);
+      setPendingData(parsed);
+    } else {
+      // 直接載入
+      onDataLoaded(parsed);
+    }
+  };
+
+  const handleValidationClose = () => {
+    setValidationResult(null);
+    setPendingData(null);
+  };
+
+  const handleValidationContinue = () => {
+    if (pendingData) {
+      onDataLoaded(pendingData);
+      setValidationResult(null);
+      setPendingData(null);
+    }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -235,6 +262,15 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
           </div>
         )}
       </div>
+
+      {/* 驗證結果 Modal */}
+      {validationResult && (
+        <ValidationModal
+          result={validationResult}
+          onClose={handleValidationClose}
+          onContinue={handleValidationContinue}
+        />
+      )}
     </div>
   );
 };
