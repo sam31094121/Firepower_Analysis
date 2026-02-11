@@ -37,15 +37,33 @@ export const saveRecordDB = async (record: HistoryRecord): Promise<void> => {
   }
 };
 
+// 斷路器：如果資料庫連線失敗（例如未建立），則停止後續請求
+let isDbConnectionWorking = true;
+
+const handleFirestoreError = (error: any) => {
+  if (error?.message?.includes('Database') && error?.message?.includes('not found')) {
+    console.warn("⚠️ 偵測到 Firestore 資料庫尚未建立，已啟用斷路器停止後續請求。");
+    isDbConnectionWorking = false;
+  }
+  return error;
+};
+
 export const getAllRecordsDB = async (): Promise<HistoryRecord[]> => {
+  if (!isDbConnectionWorking) {
+    console.warn("⚠️ 斷路器已啟動：跳過 Firestore 請求 (資料庫未建立)");
+    return [];
+  }
+
   try {
     const recordsRef = collection(db, COLLECTION_RECORDS);
     const snapshot = await getDocs(recordsRef);
     const records = snapshot.docs.map(doc => doc.data() as HistoryRecord);
     return records;
   } catch (error) {
+    handleFirestoreError(error);
     console.error("Firestore: 載入記錄失敗", error);
-    throw new Error("載入歷史紀錄失敗");
+    // 這裡我們不拋出錯誤，而是回傳空陣列，避免前端炸裂
+    return [];
   }
 };
 
