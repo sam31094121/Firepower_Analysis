@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EmployeeData, EmployeeCategory } from '../types';
 import {
   ComposedChart,
@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import { speakPerformance } from '../services/ttsService';
+import { speakPerformance, initVoiceSystem } from '../services/ttsService';
 
 interface Props {
   employees: EmployeeData[];
@@ -18,7 +18,16 @@ interface Props {
 
 const Dashboard: React.FC<Props> = ({ employees }) => {
   const [speakingEmployeeId, setSpeakingEmployeeId] = useState<string | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // 初始化語音系統
+  useEffect(() => {
+    initVoiceSystem();
+    // 監聽語音列表變更，確保聲音已加載
+    window.speechSynthesis.onvoiceschanged = () => {
+      initVoiceSystem();
+    };
+  }, []);
+
   // 準備圖表數據
   const chartData = employees.map(emp => ({
     id: emp.id,
@@ -45,37 +54,21 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
     // 防止事件冒泡
     event.stopPropagation();
 
-    // 防抖：如果正在播放，則忽略點擊
-    if (speakingEmployeeId) {
-      return;
-    }
+    // 零延遲反應：立即設定 UI 狀態
+    setSpeakingEmployeeId(emp.id);
 
     try {
-      // 初始化 AudioContext（首次使用時）
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
+      // 播放語音 (內部會自動 cancel 上一段語音)
+      await speakPerformance(emp);
 
-      // 解除瀏覽器自動播放封鎖（必須在用戶互動後調用）
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
-
-      // 設定播放狀態
-      setSpeakingEmployeeId(emp.id);
-
-      // 播放語音
-      await speakPerformance(emp, audioContextRef.current);
-
-      // 播放完成，清除狀態
-      setSpeakingEmployeeId(null);
+      // 播放結束後，只有當目前還是在播放同一人時才清除狀態
+      // 避免因為快速點擊切換，導致把新的人的狀態清除
+      setSpeakingEmployeeId(prev => prev === emp.id ? null : prev);
     } catch (error: any) {
       console.error('播放失敗:', error);
-      setSpeakingEmployeeId(null);
+      setSpeakingEmployeeId(prev => prev === emp.id ? null : prev);
 
-      // 顯示詳細錯誤訊息
-      const errorMsg = error?.message || '未知錯誤';
-      alert(`🔊 語音播報失敗\n\n${errorMsg}`);
+      // 不顯示 alert 干擾體驗，僅 log
     }
   };
 
