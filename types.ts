@@ -28,7 +28,6 @@ export interface EmployeeData {
   categoryRank?: number;       // AI 給出的組內排名
   aiAdvice?: string;           // 一般派單建議
   scoutAdvice?: string;        // 星探區專用建議(現況+提拔原因)
-  timestamp: number;
 
   // 原有累積數據 (保留擴充性)
   monthlyTotalLeads: number;
@@ -56,13 +55,21 @@ export interface HistoryRecord {
   dataSource?: 'minshi' | 'yishin' | 'combined';  // 表格來源
 
   // 雙視角數據系統
-  data: EmployeeData[];      // 向下相容：預設指向 rawData
-  rawData?: EmployeeData[];  // 當日原始數據（永久保留）
+  rawData: EmployeeData[];   // 當日原始數據（永久保留）
   analyzed41DaysData?: EmployeeData[];  // 41天彙總分析結果（AI 分析後才有）
 
   // 分析狀態
   isAnalyzed?: boolean;      // 是否已執行 AI 分析
   analyzedAt?: string;       // AI 分析時間（ISO 8601）
+
+  // 41天分析範圍資訊
+  analyzed41DaysRange?: {
+    startDate: string;         // 開始日期 "2026-01-03"
+    endDate: string;           // 結束日期 "2026-02-12"
+    actualRecordCount: number; // 實際抓到的記錄筆數
+    expectedDays: number;      // 預期天數 (41)
+    dataSource: 'minshi' | 'yishin' | 'combined';
+  };
 
   totalRevenue: number;
 }
@@ -101,9 +108,15 @@ export interface EmployeeDailyRecord {
   date: string;                  // 日期（YYYY-MM-DD）
 
   // 雙視角數據
-  data: EmployeeData;            // 向下相容：預設指向 rawData
-  rawData?: EmployeeData;        // 當日原始數據
+  rawData: EmployeeData;         // 當日原始數據
   analyzed41DaysData?: EmployeeData;  // 當天執行分析時的 41 天彙總結果
+
+  // 41天分析範圍資訊
+  analyzed41DaysRange?: {
+    startDate: string;         // 開始日期
+    endDate: string;           // 結束日期
+    actualRecordCount: number; // 實際抓到的記錄筆數
+  };
 
   source: 'minshi' | 'yishin' | 'combined'; // 資料來源
   createdAt: string;             // 建立時間
@@ -125,4 +138,59 @@ export interface ValidationResult {
   errors: ValidationError[];     // 錯誤列表
   warnings: ValidationError[];   // 警告列表
   infos: ValidationError[];      // 提示列表
+}
+
+// ==================== 查詢系統型別定義 ====================
+
+// 指標類型
+export type MetricType =
+  | 'todayLeads'
+  | 'todaySales'
+  | 'todayFollowupSales'
+  | 'todayNetRevenue'
+  | 'avgOrderValue'
+  | 'followupCount'
+  | 'todayConvRate'
+  | 'monthlyTotalLeads'
+  | 'monthlyLeadSales'
+  | 'monthlyFollowupSales'
+  | 'monthlyTotalConvRate'
+  | 'monthlyActualRevenue';
+
+// 查詢選項
+export interface QueryOptions {
+  employeeIds?: string[];        // 指定人員 (空 = 全部)
+  startDate: string;             // 開始日期 (YYYY-MM-DD)
+  endDate: string;               // 結束日期 (YYYY-MM-DD)
+  metrics?: MetricType[];        // 指標類型
+  dataSource?: 'minshi' | 'yishin' | 'combined';
+  useAnalyzedData?: boolean;     // 使用分析後數據?
+}
+
+// 時間序列數據點
+export interface TimeSeriesDataPoint {
+  date: string;
+  employeeId: string;
+  employeeName: string;
+  value: number | string;
+  metric: MetricType;
+}
+
+// 排行榜數據
+export interface RankingData {
+  employeeId: string;
+  employeeName: string;
+  value: number | string;
+  rank: number;
+  metric: MetricType;
+}
+
+// 圖表數據格式 (通用)
+export interface ChartData {
+  labels: string[];
+  datasets: {
+    label: string;
+    data: (number | string)[];
+    [key: string]: any;
+  }[];
 }

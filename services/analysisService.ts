@@ -12,8 +12,8 @@ export const aggregate41DaysData = async (): Promise<EmployeeData[]> => {
     const employeeMap = new Map<string, EmployeeData>();
 
     records.forEach(record => {
-        // 優先使用 rawData（當日原始數據），向下相容舊數據使用 data
-        const dataToUse = record.rawData || record.data;
+        // 使用 rawData (當日原始數據)
+        const dataToUse = record.rawData;
 
         dataToUse.forEach(emp => {
             const existing = employeeMap.get(emp.name);
@@ -22,8 +22,7 @@ export const aggregate41DaysData = async (): Promise<EmployeeData[]> => {
                 // 第一次遇到此員工，初始化
                 employeeMap.set(emp.name, {
                     ...emp,
-                    id: `agg-${emp.name}-${Date.now()}`,
-                    timestamp: Date.now()
+                    id: `agg-${emp.name}-${Date.now()}`
                 });
             } else {
                 // 累加 41 天數據

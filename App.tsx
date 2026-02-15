@@ -9,6 +9,7 @@ import EmployeeDirectory from './components/EmployeeDirectory';
 import EmployeeProfilePage from './components/EmployeeProfilePage';
 import ApiDiagnostics from './components/ApiDiagnostics';
 import { analyzePerformance } from './services/geminiService';
+import { calculateRankings } from './utils/rankingCalculator';
 import {
   getAllRecordsDB,
   saveRecordDB,
@@ -82,7 +83,7 @@ const App: React.FC = () => {
     // 檢查是否已有數據
     const existingRecord = await getRecordByDateDB(archiveDate, currentDataSource);
     if (existingRecord) {
-      const dataCount = existingRecord.rawData?.length || existingRecord.data?.length || 0;
+      const dataCount = existingRecord.rawData?.length || 0;
       const statusText = existingRecord.isAnalyzed ? '✓ 已分析' : '⚠️ 未分析';
       const confirm = window.confirm(
         `該日期 (${archiveDate} ${dataSourceLabel}) 已有數據\n` +
@@ -106,7 +107,6 @@ const App: React.FC = () => {
         date: new Date().toLocaleString(),
         archiveDate: archiveDate,
         dataSource: currentDataSource,
-        data: JSON.parse(JSON.stringify(newData)),  // 向下相容
         rawData: JSON.parse(JSON.stringify(newData)),  // 當日原始數據
         analyzed41DaysData: undefined,  // 尚未分析
         isAnalyzed: false,
@@ -145,7 +145,6 @@ const App: React.FC = () => {
             employeeId: empId,
             employeeName: empData.name,
             date: archiveDate,
-            data: empData,  // 向下相容
             rawData: empData,  // 當日原始數據
             analyzed41DaysData: undefined,  // 尚未分析
             source: currentDataSource,
@@ -247,10 +246,8 @@ const App: React.FC = () => {
       const employeeMap = new Map<string, any>();
 
       historicalRecords.forEach((record, index) => {
-        const dataToUse = record.rawData || record.data;
+        const dataToUse = record.rawData;
         console.log(`  - 記錄 ${index + 1} (${record.archiveDate}):`, {
-          hasRawData: !!record.rawData,
-          hasData: !!record.data,
           usingRawData: !!record.rawData,
           employeeCount: dataToUse.length,
           firstEmployee: dataToUse[0] ? {
@@ -391,7 +388,6 @@ const App: React.FC = () => {
           todayConvRate: `${convRate}%`,
           avgOrderValue: avgOrderValue,
           id: `agg-${emp.name}-${Date.now()}`,
-          timestamp: Date.now(),
           // 初始化排名欄位（稍後會計算）
           revenueRank: '-',
           followupRank: '-',
@@ -413,35 +409,14 @@ const App: React.FC = () => {
         return;
       }
 
-      // 4.5 計算排名（在 AI 分析前）
-      console.log('  - 計算排名...');
-
-      // 業績排名（總業績由高到低,排名越小越好）
-      const sortedByRevenue = [...aggregatedData].sort((a, b) => b.todayNetRevenue - a.todayNetRevenue);
-      sortedByRevenue.forEach((emp, index) => {
-        const found = aggregatedData.find(e => e.name === emp.name);
-        if (found) found.revenueRank = String(index + 1);
-      });
-
-      // 追續排名（追續總額由高到低,排名越小越好）
-      const sortedByFollowup = [...aggregatedData].sort((a, b) => b.todayFollowupSales - a.todayFollowupSales);
-      sortedByFollowup.forEach((emp, index) => {
-        const found = aggregatedData.find(e => e.name === emp.name);
-        if (found) found.followupRank = String(index + 1);
-      });
-
-      // 均價排名（派單價值由高到低,排名越小越好）
-      const sortedByAvgPrice = [...aggregatedData].sort((a, b) => b.avgOrderValue - a.avgOrderValue);
-      sortedByAvgPrice.forEach((emp, index) => {
-        const found = aggregatedData.find(e => e.name === emp.name);
-        if (found) found.avgPriceRank = String(index + 1);
-      });
-
+      // 4.5 自動計算排名（使用 calculateRankings）
+      console.log('  - 自動計算排名...');
+      const rankedData = calculateRankings(aggregatedData);
       console.log('  - 排名計算完成');
 
       // 5. AI 分析
       console.log('  - 開始呼叫 AI 分析...');
-      const analyzedData = await analyzePerformance(aggregatedData);
+      const analyzedData = await analyzePerformance(rankedData);
       console.log('  - AI 分析完成，結果筆數:', analyzedData?.length || 0);
 
       // 驗證 AI 分析結果
@@ -478,9 +453,18 @@ const App: React.FC = () => {
         date: new Date().toLocaleString(),
         archiveDate: archiveDate,
         dataSource: currentDataSource,
-        data: JSON.parse(JSON.stringify(analyzedData)),  // 向下相容：指向分析結果
         rawData: JSON.parse(JSON.stringify(preservedRawData)),  // 保留原始數據
         analyzed41DaysData: JSON.parse(JSON.stringify(analyzedData)),  // 41天分析結果
+
+        // ✅ 記錄 41 天分析範圍
+        analyzed41DaysRange: {
+          startDate: startDate,
+          endDate: endDate,
+          actualRecordCount: actualRecordsCount,
+          expectedDays: 41,
+          dataSource: currentDataSource
+        },
+
         isAnalyzed: true,
         analyzedAt: new Date().toISOString(),
         totalRevenue: analyzedData.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
@@ -498,9 +482,16 @@ const App: React.FC = () => {
             employeeId: empId,
             employeeName: empData.name,
             date: archiveDate,
-            data: empData,  // 向下相容：指向分析結果
-            rawData: existingRecord?.data?.find(e => e.name === empData.name),  // 保留原始數據
+            rawData: preservedRawData.find(e => e.name === empData.name) || empData,  // 保留原始數據
             analyzed41DaysData: empData,  // 41天分析結果
+
+            // ✅ 記錄 41 天分析範圍
+            analyzed41DaysRange: {
+              startDate: startDate,
+              endDate: endDate,
+              actualRecordCount: actualRecordsCount
+            },
+
             source: currentDataSource,
             createdAt: new Date().toISOString()
           };
@@ -549,7 +540,7 @@ const App: React.FC = () => {
       date: new Date().toLocaleString(),
       archiveDate: archiveDate,
       dataSource: currentDataSource,
-      data: JSON.parse(JSON.stringify(employees)),
+      rawData: JSON.parse(JSON.stringify(employees)),
       totalRevenue: employees.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
     };
 
@@ -568,12 +559,12 @@ const App: React.FC = () => {
 
   const loadRecord = (record: HistoryRecord) => {
     console.log('📂 載入記錄:', record.title);
-    console.log('  - rawData 筆數:', record.rawData?.length || record.data?.length || 0);
+    console.log('  - rawData 筆數:', record.rawData?.length || 0);
     console.log('  - analyzed41DaysData 筆數:', record.analyzed41DaysData?.length || 0);
     console.log('  - isAnalyzed:', record.isAnalyzed);
 
     // 載入雙視角數據
-    const raw = record.rawData || record.data;
+    const raw = record.rawData;
     const analyzed = record.analyzed41DaysData;
 
     setRawData([...raw]);

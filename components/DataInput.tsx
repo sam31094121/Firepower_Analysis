@@ -3,6 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { extractDataFromImage } from '../services/geminiService';
 import { validateEmployeeData } from '../services/dataValidation';
 import { EmployeeData, EmployeeCategory, ValidationResult } from '../types';
+import { calculateRankings } from '../utils/rankingCalculator';
 import ValidationModal from './ValidationModal';
 
 interface Props {
@@ -60,21 +61,30 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
 
     const parsed: EmployeeData[] = validRows.map((row, idx) => {
       const rev = cleanNum(row[4]);
+      const leads = cleanNum(row[1]);
+      const sales = cleanNum(row[2]);
+
+      // 自動計算派單價值
+      const avgOrderValue = leads > 0 ? Math.round(rev / leads) : 0;
+
+      // 自動計算成交率
+      const convRate = leads > 0 ? ((sales / leads) * 100).toFixed(1) : '0.0';
+
       return {
         id: `grid-${idx}-${Date.now()}`,
         name: row[0] || `員工 ${idx + 1}`,
-        todayLeads: cleanNum(row[1]),
-        todaySales: cleanNum(row[2]),
+        todayLeads: leads,
+        todaySales: sales,
         followupCount: cleanNum(row[3]),
         todayNetRevenue: rev,
-        avgOrderValue: cleanNum(row[5]),
+        avgOrderValue: avgOrderValue,  // 自動計算
         todayFollowupSales: cleanNum(row[6]),
-        revenueRank: row[7] || '-',
-        followupRank: row[8] || '-',
-        avgPriceRank: row[9] || '-',
-        todayConvRate: row[10] || '0%',
+        revenueRank: '-',      // 稍後自動計算
+        followupRank: '-',     // 稍後自動計算
+        avgPriceRank: '-',     // 稍後自動計算
+        todayConvRate: `${convRate}%`,  // 自動計算
         monthlyActualRevenueNet: rev,
-        monthlyTotalConvRate: row[10] || '0%',
+        monthlyTotalConvRate: `${convRate}%`,
         monthlyTotalLeads: 0,
         monthlyLeadSales: 0,
         monthlyFollowupSales: 0,
@@ -88,21 +98,23 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
         followupAmount: 0,
         returnAmount: 0,
         monthlyActualRevenue: rev,
-        category: EmployeeCategory.STEADY,
-        timestamp: Date.now()
+        category: EmployeeCategory.STEADY
       };
     });
 
+    // 自動計算排名
+    const rankedData = calculateRankings(parsed);
+
     // 驗證資料
-    const result = validateEmployeeData(parsed);
+    const result = validateEmployeeData(rankedData);
 
     if (!result.isValid || result.infos.length > 0) {
       // 有錯誤或提示,顯示 Modal
       setValidationResult(result);
-      setPendingData(parsed);
+      setPendingData(rankedData);
     } else {
       // 直接載入
-      onDataLoaded(parsed);
+      onDataLoaded(rankedData);
     }
   };
 

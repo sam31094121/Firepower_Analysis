@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EmployeeProfile } from '../types';
+import { EmployeeProfile, EmployeeData } from '../types';
 import { getAllEmployeeProfilesDB, getEmployeeLatestRecordDB } from '../services/dbService';
 
 interface Props {
@@ -10,7 +10,9 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
     const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
+    const [dataView, setDataView] = useState<'raw' | 'analyzed'>('raw');  // 數據視角
     const [latestRecordDates, setLatestRecordDates] = useState<Record<string, string>>({});
+    const [latestRecordData, setLatestRecordData] = useState<Record<string, { raw?: EmployeeData; analyzed?: EmployeeData }>>({});
 
     useEffect(() => {
         loadEmployees();
@@ -21,15 +23,24 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
             const allEmployees = await getAllEmployeeProfilesDB();
             setEmployees(allEmployees);
 
-            // 載入每位員工的最新紀錄日期
+            // 載入每位員工的最新紀錄日期與數據
             const dates: Record<string, string> = {};
+            const data: Record<string, { raw?: EmployeeData; analyzed?: EmployeeData }> = {};
+
             for (const emp of allEmployees) {
                 const latestRecord = await getEmployeeLatestRecordDB(emp.id);
                 if (latestRecord) {
                     dates[emp.id] = latestRecord.date;
+                    // 儲存雙視角數據
+                    data[emp.id] = {
+                        raw: latestRecord.rawData,
+                        analyzed: latestRecord.analyzed41DaysData
+                    };
                 }
             }
+
             setLatestRecordDates(dates);
+            setLatestRecordData(data);
         } catch (error) {
             console.error('載入員工清單失敗', error);
         }
@@ -101,6 +112,29 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                         全部
                     </button>
                 </div>
+
+                {/* 數據視角切換 */}
+                <div className="flex gap-2 mt-3">
+                    <span className="text-[10px] text-slate-500 font-bold self-center mr-1">數據視角:</span>
+                    <button
+                        onClick={() => setDataView('raw')}
+                        className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataView === 'raw'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                    >
+                        📅 當日數據
+                    </button>
+                    <button
+                        onClick={() => setDataView('analyzed')}
+                        className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataView === 'analyzed'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                    >
+                        📈 41天分析
+                    </button>
+                </div>
             </div>
 
             {/* 員工列表 */}
@@ -132,6 +166,50 @@ const EmployeeDirectory: React.FC<Props> = ({ onSelectEmployee }) => {
                                             最近數據：{latestRecordDates[emp.id]}
                                         </p>
                                     )}
+
+                                    {/* 顯示當前視角的數據 */}
+                                    {latestRecordData[emp.id] && (
+                                        <div className="mt-2 grid grid-cols-3 gap-2">
+                                            {dataView === 'raw' && latestRecordData[emp.id].raw && (
+                                                <>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">派單:</span>
+                                                        <span className="font-bold text-slate-700 ml-1">{latestRecordData[emp.id].raw!.todayLeads}</span>
+                                                    </div>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">派成:</span>
+                                                        <span className="font-bold text-slate-700 ml-1">{latestRecordData[emp.id].raw!.todaySales}</span>
+                                                    </div>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">業績:</span>
+                                                        <span className="font-bold text-slate-700 ml-1">{(latestRecordData[emp.id].raw!.todayNetRevenue / 10000).toFixed(1)}萬</span>
+                                                    </div>
+                                                </>
+                                            )}
+                                            {dataView === 'analyzed' && latestRecordData[emp.id].analyzed && (
+                                                <>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">41天派單:</span>
+                                                        <span className="font-bold text-purple-700 ml-1">{latestRecordData[emp.id].analyzed!.todayLeads}</span>
+                                                    </div>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">41天派成:</span>
+                                                        <span className="font-bold text-purple-700 ml-1">{latestRecordData[emp.id].analyzed!.todaySales}</span>
+                                                    </div>
+                                                    <div className="text-[10px]">
+                                                        <span className="text-slate-400">41天業績:</span>
+                                                        <span className="font-bold text-purple-700 ml-1">{(latestRecordData[emp.id].analyzed!.todayNetRevenue / 10000).toFixed(1)}萬</span>
+                                                    </div>
+                                                </>
+                                            )}
+                                            {dataView === 'analyzed' && !latestRecordData[emp.id].analyzed && (
+                                                <div className="col-span-3 text-[10px] text-slate-400 italic">
+                                                    尚未進行 41 天分析
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {emp.notes && (
                                         <p className="text-xs text-slate-600 mt-1 line-clamp-1">{emp.notes}</p>
                                     )}
