@@ -24,18 +24,23 @@ import {
 } from './services/dbService';
 import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from './types';
 
+type AppArea = 'analysis' | 'input';
+
 const App: React.FC = () => {
+  const [activeArea, setActiveArea] = useState<AppArea>('analysis');
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTitle, setCurrentTitle] = useState<string>('未命名分析');
   const [currentArchiveDate, setCurrentArchiveDate] = useState<string>('');
-  const [currentDataSource, setCurrentDataSource] = useState<'minshi' | 'yishin' | 'combined'>('combined');
+  const [currentDataSource, setCurrentDataSource] = useState<'minshi' | 'yishin' | 'combined'>('yishin');
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   // 雙視角數據系統
-  const [dataView, setDataView] = useState<'raw' | 'analyzed'>('raw');  // 當前視角
+  const [dataView, setDataView] = useState<'raw' | 'analyzed'>('analyzed');  // 初始為 41天分析
   const [rawData, setRawData] = useState<EmployeeData[]>([]);  // 當日原始數據
   const [analyzed41DaysData, setAnalyzed41DaysData] = useState<EmployeeData[]>([]);  // 41天分析結果
   const [isAnalyzed, setIsAnalyzed] = useState(false);  // 是否已分析
@@ -63,15 +68,29 @@ const App: React.FC = () => {
     }
   };
 
+  // 初始載入：奕心表、最新日期、已分析的 41 天分析
   useEffect(() => {
-    refreshHistory();
-    const lastSession = localStorage.getItem('marketing_firepower_last_session');
-    if (lastSession) {
-      try {
-        const parsed = JSON.parse(lastSession);
-        if (parsed?.data) { setEmployees(parsed.data); setCurrentTitle(parsed.title); }
-      } catch (e) { }
-    }
+    const initDisplay = async () => {
+      const records = await getAllRecordsDB();
+      const yishinAnalyzed = records
+        .filter((r) => r.dataSource === 'yishin' && r.isAnalyzed && (r.analyzed41DaysData?.length ?? 0) > 0)
+        .sort((a, b) => (b.archiveDate || '').localeCompare(a.archiveDate || ''));
+      const latest = yishinAnalyzed[0];
+      if (latest) {
+        const raw = latest.rawData || [];
+        const analyzed = latest.analyzed41DaysData || [];
+        setCurrentArchiveDate(latest.archiveDate || '');
+        setCurrentDataSource('yishin');
+        setRawData([...raw]);
+        setAnalyzed41DaysData([...analyzed]);
+        setIsAnalyzed(true);
+        setDataView('analyzed');
+        setEmployees([...analyzed]);
+        setCurrentTitle(latest.title || `${latest.archiveDate} 奕心表`);
+      }
+      await refreshHistory();
+    };
+    initDisplay();
   }, []);
 
   // 📥 資料載入（不執行 AI 分析）
@@ -648,32 +667,79 @@ const App: React.FC = () => {
 
       <header className="h-40 bg-slate-900 flex flex-col justify-end p-8 border-b-4 border-blue-600">
         <div className="max-w-7xl mx-auto w-full flex items-end justify-between">
-          <h1 className="text-3xl font-black text-white italic tracking-tighter">行銷火力分析系統</h1>
+          <div className="flex items-center gap-6">
+            {/* 選單按鈕 */}
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="w-12 h-12 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all"
+                aria-label="選單"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-50 overflow-hidden">
+                    <button
+                      onClick={() => { setActiveArea('analysis'); setMenuOpen(false); }}
+                      className={`w-full px-4 py-3 text-left font-black text-sm transition-colors flex items-center gap-2 ${activeArea === 'analysis' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      <span className="text-lg">📊</span> 分析區
+                    </button>
+                    <div className="border-t border-slate-200 my-1" role="separator" />
+                    <button
+                      onClick={() => { setActiveArea('input'); setMenuOpen(false); }}
+                      className={`w-full px-4 py-3 text-left font-black text-sm transition-colors flex items-center gap-2 ${activeArea === 'input' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      <span className="text-lg">📥</span> 輸入區
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <h1 className="text-3xl font-black text-white italic tracking-tighter">行銷火力分析系統</h1>
+              <span className={`text-xs font-black px-3 py-1 rounded-full ${activeArea === 'analysis' ? 'bg-blue-500/30 text-blue-100' : 'bg-emerald-500/30 text-emerald-100'}`}>
+                {activeArea === 'analysis' ? '📊 分析區' : '📥 輸入區'}
+              </span>
+            </div>
+          </div>
           <ApiDiagnostics />
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10 w-full flex-1">
         <div className="flex flex-col lg:flex-row gap-10">
+          {/* 左側欄：分析區僅顯示月曆，輸入區顯示全部 */}
           <div className="w-full lg:w-80 space-y-6">
-            {/* 員工清單按鈕 */}
-            <button
-              onClick={() => setShowEmployeeDirectory(true)}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-xl font-black text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-            >
-              <span className="text-2xl">👥</span>
-              員工清單
-            </button>
-
-            <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} />
-            <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
-            <HistorySidebar
-              records={history}
-              onLoadRecord={loadRecord}
-              onDeleteRecord={deleteRecord}
-              onClearAll={handleClearAll}
-              onExportAll={handleExportAll}
-            />
+            {activeArea === 'input' && (
+              <>
+                {/* 員工清單按鈕 - 僅輸入區 */}
+                <button
+                  onClick={() => setShowEmployeeDirectory(true)}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-xl font-black text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+                >
+                  <span className="text-2xl">👥</span>
+                  員工清單
+                </button>
+              </>
+            )}
+            <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} defaultDataSource={currentDataSource} selectedDateFromParent={currentArchiveDate || null} />
+            {activeArea === 'input' && (
+              <>
+                <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
+                <HistorySidebar
+                  records={history}
+                  onLoadRecord={loadRecord}
+                  onDeleteRecord={deleteRecord}
+                  onClearAll={handleClearAll}
+                  onExportAll={handleExportAll}
+                />
+              </>
+            )}
           </div>
 
           <div className="flex-1">
@@ -688,8 +754,8 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              {/* AI 分析按鈕 */}
-              {employees.length > 0 && (
+              {/* AI 分析按鈕 - 僅輸入區 */}
+              {activeArea === 'input' && employees.length > 0 && (
                 <button
                   onClick={handleAIAnalyze}
                   disabled={isAnalyzing}
@@ -715,7 +781,7 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {/* 視角切換按鈕 */}
+            {/* 視角切換按鈕 - 兩區皆有 */}
             {employees.length > 0 && rawData.length > 0 && (
               <div className="flex items-center gap-3 mb-6">
                 <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">數據視角:</span>
@@ -734,15 +800,9 @@ const App: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                      console.log('🔄 切換到 41天分析視角');
-                      console.log('  - analyzed41DaysData 筆數:', analyzed41DaysData.length);
-                      console.log('  - isAnalyzed:', isAnalyzed);
                       if (analyzed41DaysData.length > 0) {
                         setDataView('analyzed');
                         setEmployees([...analyzed41DaysData]);
-                        console.log('  ✅ 切換成功');
-                      } else {
-                        console.log('  ❌ 無分析數據');
                       }
                     }}
                     disabled={!isAnalyzed || analyzed41DaysData.length === 0}

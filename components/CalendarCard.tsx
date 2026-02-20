@@ -5,14 +5,33 @@ import { HistoryRecord } from '../types';
 interface CalendarCardProps {
     onDateSelect: (date: string, dataSource: 'minshi' | 'yishin' | 'combined') => void;
     refreshTrigger?: number; // 用於觸發重新載入日期標記
+    defaultDataSource?: 'minshi' | 'yishin' | 'combined'; // 初始數據源
+    selectedDateFromParent?: string | null; // 父層載入的選中日期，月曆同步顯示
 }
 
-const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigger }) => {
+const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigger, defaultDataSource = 'yishin', selectedDateFromParent }) => {
     const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
     const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
-    const [dataSource, setDataSource] = useState<'minshi' | 'yishin' | 'combined'>('combined');
+    const [dataSource, setDataSource] = useState<'minshi' | 'yishin' | 'combined'>(defaultDataSource);
+
+    useEffect(() => {
+        setDataSource(defaultDataSource);
+    }, [defaultDataSource]);
+
     const [recordDates, setRecordDates] = useState<Set<string>>(new Set());
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+    // 父層載入 record 時同步選中日期與年月
+    useEffect(() => {
+        if (selectedDateFromParent) {
+            setSelectedDate(selectedDateFromParent);
+            const [y, m] = selectedDateFromParent.split('-').map(Number);
+            if (y && m) {
+                setCurrentYear(y);
+                setCurrentMonth(m);
+            }
+        }
+    }, [selectedDateFromParent]);
 
     // 獲取當月所有有數據的日期
     const loadRecordDates = async () => {
