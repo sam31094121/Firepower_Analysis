@@ -281,7 +281,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   tickLine={false}
                   interval={0}
                   tick={({ x, y, payload }) => (
-                    <g transform={`translate(${x},${y + 10})`}>
+                    <g transform={`translate(${x},${y + 18})`}>
                       <text
                         x={0}
                         y={0}
@@ -295,7 +295,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                       </text>
                     </g>
                   )}
-                  height={100}
+                  height={70}
                 />
                 <YAxis
                   yAxisId="left"

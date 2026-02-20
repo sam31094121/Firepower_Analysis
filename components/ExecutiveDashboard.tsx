@@ -69,50 +69,69 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
         ].filter(d => d.value > 0);
     }, [currentEmployees]);
 
-    // 3. 本月營收預測 (Monthly Forecast)
+    // 3. 本月營收預測 (Monthly Forecast) — 純歷史 + dayOfMonth 線性推算
     const forecastData = useMemo(() => {
         const today = new Date();
         const currentYear = today.getFullYear();
-        const currentMonth = today.getMonth(); // 0-indexed
+        const currentMonth = today.getMonth();
+        const dayOfMonth = today.getDate();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
-        // 1. 計算歷史存檔中的本月營收 (不含今日)
-        const historyMonthlyRevenue = history.reduce((sum, record) => {
+        // 純歷史累計（移除 todayRealtimeRevenue 避免重複計算）
+        const currentMonthTotal = history.reduce((sum, record) => {
             if (!record.archiveDate) return sum;
-            const recordDate = new Date(record.archiveDate);
-            // 檢查是否為同年同月
-            if (recordDate.getFullYear() === currentYear && recordDate.getMonth() === currentMonth) {
-                // 優先使用 rawData 加總 (最準確)，若無則勉強用 totalRevenue
+            const d = new Date(record.archiveDate);
+            if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
                 const dailyTotal = record.rawData && record.rawData.length > 0
-                    ? record.rawData.reduce((dSum, emp) => dSum + emp.todayNetRevenue, 0)
+                    ? record.rawData.reduce((s, e) => s + e.todayNetRevenue, 0)
                     : record.totalRevenue;
                 return sum + dailyTotal;
             }
             return sum;
         }, 0);
 
-        // 2. 計算今日即時營收
-        const todayRealtimeRevenue = currentEmployees.reduce((sum, e) => sum + e.todayNetRevenue, 0);
-
-        // 3. 本月目前總營收 (已實現)
-        const currentMonthTotal = historyMonthlyRevenue + todayRealtimeRevenue;
-
-        // 4. 預測邏輯
-        const dayOfMonth = today.getDate();
-        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-
-        // 簡單線性推估： (目前營收 / 已過天數) * 全月天數
-        // Math.max(dayOfMonth, 1) 避免除以 0
-        const projected = Math.round(currentMonthTotal * (daysInMonth / Math.max(dayOfMonth, 1)));
+        // 線性比例：累計 / 已過天數 × 全月天數
+        const projected = dayOfMonth > 0 ? Math.round(currentMonthTotal / dayOfMonth * daysInMonth) : 0;
 
         return {
             current: currentMonthTotal,
             projected,
-            // 進度 = 目前營收 / 預估營收
             progress: projected > 0 ? Math.min(Math.round((currentMonthTotal / projected) * 100), 100) : 0
         };
-    }, [history, currentEmployees]);
+    }, [history]);
 
-    // 4. 派單統計 (Dispatch Stats)
+    // 4. 今日需達 / 今日已達 (從 localStorage 讀目標，計算滾動每日標準)
+    const dailyTarget = useMemo(() => {
+        const today = new Date();
+        const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        const storedTarget = localStorage.getItem(`monthlyTarget_${monthKey}`);
+        const target = storedTarget ? Number(storedTarget) : null;
+
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
+        const dayOfMonth = today.getDate();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const remainingDays = Math.max(daysInMonth - dayOfMonth, 0);
+
+        // 最新一筆 history 當日業績
+        const thisMonthRecs = history
+            .filter(r => r.archiveDate?.startsWith(monthKey))
+            .sort((a, b) => (a.archiveDate || '').localeCompare(b.archiveDate || ''));
+        const latestRec = thisMonthRecs[thisMonthRecs.length - 1];
+        const todayRevenue = latestRec
+            ? (latestRec.rawData?.length > 0
+                ? latestRec.rawData.reduce((s, e) => s + e.todayNetRevenue, 0)
+                : latestRec.totalRevenue)
+            : 0;
+
+        if (!target) return { dailyRequired: null, todayRevenue, hasTarget: false };
+
+        const gap = Math.max(target - forecastData.current, 0);
+        const dailyRequired = remainingDays > 0 ? Math.round(gap / remainingDays) : 0;
+        return { dailyRequired, todayRevenue, hasTarget: true, onTarget: todayRevenue >= dailyRequired };
+    }, [history, forecastData.current]);
+
+    // 5. 派單統計 (Dispatch Stats)
     const dispatchStats = useMemo(() => {
         const totalLeads = currentEmployees.reduce((sum, e) => sum + e.todayLeads, 0);
         const totalSales = currentEmployees.reduce((sum, e) => sum + e.todaySales, 0);
@@ -126,26 +145,63 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
             {/* 頂部 KPI 卡片 */}
             <div className={`grid grid-cols-1 ${compact ? 'gap-3' : 'md:grid-cols-3 gap-6'}`}>
 
-                {/* 1. 本月營收預估 */}
-                <div className={`bg-slate-900 rounded-xl shadow-lg border border-slate-700 text-white relative overflow-hidden group ${compact ? 'p-4' : 'p-6'}`}>
-                    {!compact && <div className="absolute right-0 top-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-blue-500/20"></div>}
-                    <div className="relative z-10">
-                        <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">
-                            {compact ? '預估月收 (Forecast)' : '本月營收預估 (Month End)'}
+                {/* 1. compact 模式：今日需達 / 今日已達；full 模式：本月預估 */}
+                {compact ? (
+                    // compact sidebar: 今日需達 vs 今日已達
+                    <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-700 text-white p-4">
+                        <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-3">
+                            今日業績標準
                         </h3>
-                        <div className={`${compact ? 'text-2xl' : 'text-4xl'} font-black tabular-nums tracking-tight mb-2`}>
-                            ${forecastData.projected.toLocaleString()}
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] font-medium text-slate-400 mb-2">
-                            <span>{compact ? `${Math.round((forecastData.current / forecastData.projected) * 100)}% 達成` : `進度 ${Math.round((forecastData.current / forecastData.projected) * 100)}%`}</span>
-                            {!compact && <span>目前累積: ${forecastData.current.toLocaleString()}</span>}
-                        </div>
-                        <div className="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((forecastData.current / forecastData.projected) * 100, 100)}%` }}></div>
+                        {dailyTarget.hasTarget ? (
+                            <div className="space-y-3">
+                                {/* 今日需達 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-400 text-xs">今日需達</span>
+                                    <span className={`text-lg font-black tabular-nums ${dailyTarget.onTarget ? 'text-emerald-400' : 'text-rose-400'
+                                        }`}>
+                                        ${dailyTarget.dailyRequired!.toLocaleString()}
+                                    </span>
+                                </div>
+                                {/* 分隔線 */}
+                                <div className="border-t border-slate-700" />
+                                {/* 今日已達 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-400 text-xs">今日已達</span>
+                                    <span className="text-lg font-black tabular-nums text-white">
+                                        ${dailyTarget.todayRevenue.toLocaleString()}
+                                    </span>
+                                </div>
+                                {/* 達標狀態 */}
+                                <div className={`text-[10px] font-bold text-center py-1 rounded-lg ${dailyTarget.onTarget
+                                        ? 'bg-emerald-500/20 text-emerald-400'
+                                        : 'bg-rose-500/20 text-rose-400'
+                                    }`}>
+                                    {dailyTarget.onTarget ? '✅ 今日達標' : '⚠️ 今日未達標'}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-slate-500 text-xs text-center py-3">尚未設定月目標</div>
+                        )}
+                    </div>
+                ) : (
+                    // full view: 本月營收預估
+                    <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-700 text-white relative overflow-hidden group p-6">
+                        <div className="absolute right-0 top-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-blue-500/20" />
+                        <div className="relative z-10">
+                            <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">本月營收預估 (Month End)</h3>
+                            <div className="text-4xl font-black tabular-nums tracking-tight mb-2">
+                                ${forecastData.projected.toLocaleString()}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] font-medium text-slate-400 mb-2">
+                                <span>進度 {Math.round((forecastData.current / forecastData.projected) * 100)}%</span>
+                                <span>目前累積: ${forecastData.current.toLocaleString()}</span>
+                            </div>
+                            <div className="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
+                                <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((forecastData.current / forecastData.projected) * 100, 100)}%` }} />
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* 2. Compact 模式新增：派單數與失敗數 (雙欄) */}
                 {compact && (

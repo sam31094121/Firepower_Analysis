@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import DataInput from './components/DataInput';
 import Dashboard from './components/Dashboard';
+import OperationalDashboard from './components/OperationalDashboard';
 import ChatBot from './components/ChatBot';
 import HistorySidebar from './components/HistorySidebar';
 import CalendarCard from './components/CalendarCard';
@@ -29,6 +29,7 @@ type AppArea = 'analysis' | 'input';
 
 const App: React.FC = () => {
   const [activeArea, setActiveArea] = useState<AppArea>('analysis');
+  const [activeTab, setActiveTab] = useState<'dispatch' | 'operational'>('dispatch'); // 新增 Tab 狀態
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
@@ -715,43 +716,46 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 w-full flex-1">
         <div className="flex flex-col lg:flex-row gap-10">
           {/* 左側欄：分析區僅顯示月曆，輸入區顯示全部 */}
-          <div className="w-full lg:w-80 space-y-6">
-            {activeArea === 'input' && (
-              <>
-                {/* 員工清單按鈕 - 僅輸入區 */}
-                <button
-                  onClick={() => setShowEmployeeDirectory(true)}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-xl font-black text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="text-2xl">👥</span>
-                  員工清單
-                </button>
-              </>
-            )}
-            <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} defaultDataSource={currentDataSource} selectedDateFromParent={currentArchiveDate || null} />
+          {/* 在「營運儀表」模式下隱藏側邊欄 */}
+          {!(activeArea === 'analysis' && activeTab === 'operational') && (
+            <div className="w-full lg:w-80 space-y-6">
+              {activeArea === 'input' && (
+                <>
+                  {/* 員工清單按鈕 - 僅輸入區 */}
+                  <button
+                    onClick={() => setShowEmployeeDirectory(true)}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-xl font-black text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <span className="text-2xl">👥</span>
+                    員工清單
+                  </button>
+                </>
+              )}
+              <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} defaultDataSource={currentDataSource} selectedDateFromParent={currentArchiveDate || null} />
 
-            {/* 戰略決策看板 - 嵌入式 (Compact Mode) */}
-            {activeArea === 'analysis' && history.length > 0 && (
-              <ExecutiveDashboard history={history} currentEmployees={employees} compact={true} />
-            )}
+              {/* 戰略決策看板 - 嵌入式 (Compact Mode) */}
+              {activeArea === 'analysis' && history.length > 0 && (
+                <ExecutiveDashboard history={history} currentEmployees={employees} compact={true} />
+              )}
 
-            {activeArea === 'input' && (
-              <>
-                <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
-                <HistorySidebar
-                  records={history}
-                  onLoadRecord={loadRecord}
-                  onDeleteRecord={deleteRecord}
-                  onClearAll={handleClearAll}
-                  onExportAll={handleExportAll}
-                />
-              </>
-            )}
-          </div>
+              {activeArea === 'input' && (
+                <>
+                  <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
+                  <HistorySidebar
+                    records={history}
+                    onLoadRecord={loadRecord}
+                    onDeleteRecord={deleteRecord}
+                    onClearAll={handleClearAll}
+                    onExportAll={handleExportAll}
+                  />
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex-1">
-            {/* 標題列 */}
-            <div className="flex items-center justify-between mb-4">
+            {/* 標題列與視角切換 */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-4">
                 <h2 className="text-2xl font-black text-slate-800">{currentTitle}</h2>
                 {employees.length > 0 && currentArchiveDate && (
@@ -760,6 +764,30 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Tab 切換器 (僅在分析區且有資料時顯示) */}
+              {activeArea === 'analysis' && employees.length > 0 && (
+                <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex">
+                  <button
+                    onClick={() => setActiveTab('dispatch')}
+                    className={`px-4 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 ${activeTab === 'dispatch'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:bg-slate-50'
+                      }`}
+                  >
+                    <span>🤖</span> 智慧派單
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('operational')}
+                    className={`px-4 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 ${activeTab === 'operational'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-slate-500 hover:bg-slate-50'
+                      }`}
+                  >
+                    <span>📊</span> 營運儀表
+                  </button>
+                </div>
+              )}
 
               {/* AI 分析按鈕 - 僅輸入區 */}
               {activeArea === 'input' && employees.length > 0 && (
@@ -788,7 +816,6 @@ const App: React.FC = () => {
               )}
             </div>
 
-
             {/* 視角切換已移除，回歸單一視角 */}
             {employees.length > 0 && rawData.length > 0 && (
               <div className="flex items-center gap-3 mb-6">
@@ -799,70 +826,99 @@ const App: React.FC = () => {
                       setDataView('raw');
                       setEmployees([...rawData]);
                     }}
-                    className={`px-4 py-2 rounded-lg font-bold text-xs transition-all ${dataView === 'raw'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dataView === 'raw'
+                      ? 'bg-emerald-500 text-white shadow-md'
+                      : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-200'
                       }`}
                   >
-                    📅 當日數據
+                    當日原始
                   </button>
                   <button
                     onClick={() => {
                       if (analyzed41DaysData.length > 0) {
                         setDataView('analyzed');
                         setEmployees([...analyzed41DaysData]);
+                      } else {
+                        showToast('尚未進行 AI 分析', 'error');
                       }
                     }}
-                    disabled={!isAnalyzed || analyzed41DaysData.length === 0}
-                    className={`px-4 py-2 rounded-lg font-bold text-xs transition-all ${dataView === 'analyzed'
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dataView === 'analyzed'
                       ? 'bg-purple-600 text-white shadow-md'
-                      : isAnalyzed
-                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        : 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                      : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-200'
                       }`}
                   >
-                    📈 41天分析 {!isAnalyzed && '(未分析)'}
+                    41天分析
                   </button>
                 </div>
-                {isAnalyzed && (
-                  <span className="text-xs text-emerald-600 font-bold">✓ 已分析</span>
-                )}
               </div>
             )}
-            <Dashboard employees={employees} />
+
+            {activeArea === 'analysis' ? (
+              employees.length > 0 ? (
+                // 根據 Tab 顯示不同儀表板
+                activeTab === 'dispatch' ? (
+                  <Dashboard
+                    employees={employees}
+                    onRefresh={refreshHistory}
+                    history={history}
+                  />
+                ) : (
+                  <OperationalDashboard
+                    currentEmployees={employees}
+                    history={history}
+                  />
+                )
+              ) : (
+                <div className="text-center py-20 bg-white rounded-3xl shadow-xl border border-slate-200">
+                  <div className="text-6xl mb-4">👋</div>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">歡迎使用行銷火力分析系統</h3>
+                  <p className="text-slate-500 mb-8">請從左側選擇日期，或切換至「輸入區」匯入新數據</p>
+                  <button
+                    onClick={() => setActiveArea('input')}
+                    className="px-8 py-3 bg-blue-600 text-white rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
+                  >
+                    前往輸入數據
+                  </button>
+                </div>
+              )
+            ) : null}
+
           </div>
         </div>
       </main>
-      <ChatBot contextData={employees} />
 
-      {/* 員工清單模態視窗 */}
+      {/* 員工詳細頁面 Modal */}
       {showEmployeeDirectory && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col relative overflow-hidden">
-            <button
-              onClick={() => setShowEmployeeDirectory(false)}
-              className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors z-50"
-            >
-              ✕
-            </button>
-            <EmployeeDirectory
-              onSelectEmployee={(emp) => {
-                setSelectedEmployee(emp);
-                setShowEmployeeDirectory(false);
-              }}
-            />
-          </div>
-        </div>
+        <EmployeeDirectory
+          employees={employees}
+          onClose={() => setShowEmployeeDirectory(false)}
+          onSelectEmployee={(emp) => {
+            setSelectedEmployee(emp);
+            setShowEmployeeDirectory(false);
+          }}
+        />
       )}
 
-      {/* 員工詳細頁模態視窗 */}
       {selectedEmployee && (
         <EmployeeProfilePage
-          employee={selectedEmployee}
+          employeeId={selectedEmployee.id}
           onClose={() => setSelectedEmployee(null)}
-          onUpdate={() => {
-            // 可選：重新載入員工清單
-            setSelectedEmployee(null);
+        />
+      )}
+
+      {/* AI 助手 - 僅在有數據時顯示 */}
+      {employees.length > 0 && (
+        <ChatBot
+          contextData={{
+            employees,
+            summary: {
+              firepowerCount: employees.filter(e => e.category === '大單火力組').length,
+              steadyCount: employees.filter(e => e.category === '穩定人選').length,
+              improvementCount: employees.filter(e => e.category === '待加強').length,
+              riskCount: employees.filter(e => e.category === '風險警告').length,
+              totalRevenue: employees.reduce((sum, e) => sum + (e.todayNetRevenue || 0), 0)
+            },
+            history
           }}
         />
       )}
