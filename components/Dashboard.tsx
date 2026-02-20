@@ -279,10 +279,23 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   dataKey="name"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }}
                   interval={0}
-                  angle={-15}
-                  textAnchor="end"
+                  tick={({ x, y, payload }) => (
+                    <g transform={`translate(${x},${y + 10})`}>
+                      <text
+                        x={0}
+                        y={0}
+                        fill="#64748b"
+                        fontSize={12}
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        style={{ writingMode: 'vertical-rl', textOrientation: 'upright', letterSpacing: '0.1em' }}
+                      >
+                        {payload.value}
+                      </text>
+                    </g>
+                  )}
+                  height={100}
                 />
                 <YAxis
                   yAxisId="left"

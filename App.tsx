@@ -7,6 +7,7 @@ import HistorySidebar from './components/HistorySidebar';
 import CalendarCard from './components/CalendarCard';
 import EmployeeDirectory from './components/EmployeeDirectory';
 import EmployeeProfilePage from './components/EmployeeProfilePage';
+import ExecutiveDashboard from './components/ExecutiveDashboard';
 import ApiDiagnostics from './components/ApiDiagnostics';
 import { analyzePerformance } from './services/geminiService';
 import { calculateRankings } from './utils/rankingCalculator';
@@ -728,6 +729,12 @@ const App: React.FC = () => {
               </>
             )}
             <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} defaultDataSource={currentDataSource} selectedDateFromParent={currentArchiveDate || null} />
+
+            {/* 戰略決策看板 - 嵌入式 (Compact Mode) */}
+            {activeArea === 'analysis' && history.length > 0 && (
+              <ExecutiveDashboard history={history} currentEmployees={employees} compact={true} />
+            )}
+
             {activeArea === 'input' && (
               <>
                 <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
@@ -781,7 +788,8 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {/* 視角切換按鈕 - 兩區皆有 */}
+
+            {/* 視角切換已移除，回歸單一視角 */}
             {employees.length > 0 && rawData.length > 0 && (
               <div className="flex items-center gap-3 mb-6">
                 <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">數據視角:</span>
