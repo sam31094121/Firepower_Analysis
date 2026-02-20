@@ -295,7 +295,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                       </text>
                     </g>
                   )}
-                  height={70}
+                  height={15}
                 />
                 <YAxis
                   yAxisId="left"
