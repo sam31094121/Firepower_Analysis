@@ -8,7 +8,11 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
 } from 'recharts';
 import { speakPerformance, initVoiceSystem } from '../services/ttsService';
 
@@ -156,6 +160,237 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
 
   return (
     <div className="space-y-8">
+
+      {/* ── 派單總覽圓餅圖（第一張卡片） ── */}
+      {employees.length > 0 && (() => {
+        const totalLeads = employees.reduce((s, e) => s + (e.todayLeads || 0), 0);
+        // 每人成交不得超過派單數；沒派單的人不計入成交
+        const totalSales = employees.reduce((s, e) => {
+          const leads = e.todayLeads || 0;
+          if (leads <= 0) return s; // 沒派單不算成交
+          return s + Math.min(e.todaySales || 0, leads);
+        }, 0);
+        const cappedSales = totalSales; // 已在上面 cap 過
+        const totalUnsold = Math.max(totalLeads - cappedSales, 0);
+        const convPct = totalLeads > 0 ? Math.min(Math.round(cappedSales / totalLeads * 100), 100) : 0;
+
+        // 排序取前 8 名 + 其他
+        const sorted = [...employees]
+          .filter(e => (e.todayLeads || 0) > 0)
+          .sort((a, b) => (b.todayLeads || 0) - (a.todayLeads || 0));
+        const top = sorted.slice(0, 8);
+        const othersLeads = sorted.slice(8).reduce((s, e) => s + (e.todayLeads || 0), 0);
+        // 每人彙整（派單 + 成交）
+        const topWithOther = [
+          ...top.map(e => ({
+            name: e.name,
+            leads: e.todayLeads || 0,
+            sales: Math.min(e.todaySales || 0, e.todayLeads || 0)
+          })),
+          ...(othersLeads > 0 ? [{
+            name: '其他',
+            leads: othersLeads,
+            sales: sorted.slice(8).reduce((s, e) => s + Math.min(e.todaySales || 0, e.todayLeads || 0), 0)
+          }] : [])
+        ];
+
+        // 單環交錯數據：每人兩段（實色=成交, 淡色=未成交）+ 人間白色分隔
+        const interleavedData: { empName: string; value: number; type: 'sales' | 'unsold' | 'sep'; colorIdx: number }[] = [];
+        topWithOther.forEach((emp, i) => {
+          // 人與人之間插入分隔 slice
+          if (i > 0) interleavedData.push({ empName: '__sep__', value: Math.max(totalLeads * 0.008, 1), type: 'sep', colorIdx: -1 });
+          // 成交部分（實色）
+          if (emp.sales > 0) interleavedData.push({ empName: emp.name, value: emp.sales, type: 'sales', colorIdx: i });
+          // 未成交部分（同色淡化）
+          const unsold = emp.leads - emp.sales;
+          if (unsold > 0) interleavedData.push({ empName: emp.name, value: unsold, type: 'unsold', colorIdx: i });
+        });
+        // 尾部分隔：讓環形首尾接合處也有間距
+        if (topWithOther.length > 1) {
+          interleavedData.push({ empName: '__sep__', value: Math.max(totalLeads * 0.015, 1), type: 'sep', colorIdx: -1 });
+        }
+
+        const pieConvData = [
+          { name: '已成交', value: cappedSales },
+          { name: '未成交', value: totalUnsold }
+        ].filter(d => d.value > 0);
+
+        const LEAD_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6', '#f97316', '#94a3b8'];
+        const CONV_COLORS = ['#10b981', '#ef4444'];
+
+        // 內部 label：只顯示百分比（跳過分隔 slice）
+        const RADIAN = Math.PI / 180;
+        const renderInnerLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload }: any) => {
+          if (payload?.type === 'sep' || percent < 0.04) return null;
+          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+          const x = cx + radius * Math.cos(-midAngle * RADIAN);
+          const y = cy + radius * Math.sin(-midAngle * RADIAN);
+          return (
+            <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central"
+              fontSize={10} fontWeight="800" style={{ pointerEvents: 'none' }}>
+              {`${(percent * 100).toFixed(0)}%`}
+            </text>
+          );
+        };
+
+        // 自訂 Tooltip：顯示每人派單/成交明細
+        const CustomDispatchTooltip = ({ active, payload }: any) => {
+          if (!active || !payload?.length) return null;
+          const d = payload[0]?.payload;
+          if (!d || d.type === 'sep') return null;
+          const name = d.empName || '';
+          const emp = topWithOther.find(e => e.name === name);
+          if (!emp) return null;
+          const { leads, sales } = emp;
+          const rate = leads > 0 ? Math.min(Math.round(sales / leads * 100), 100) : 0;
+          return (
+            <div style={{ background: '#fff', borderRadius: 12, padding: '10px 14px', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.15)' }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4, color: '#1e293b' }}>{name}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>📋 派單：{leads} 筆</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#10b981' }}>✅ 成交：{sales} 筆</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#ef4444' }}>❌ 未成交：{leads - sales} 筆</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: rate >= 50 ? '#10b981' : '#ef4444', marginTop: 2, borderTop: '1px solid #e2e8f0', paddingTop: 4 }}>
+                成交率：{rate}%
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header 漸層 */}
+            <div className="relative p-6 border-b border-slate-100" style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-200">
+                    <span className="text-2xl">🥧</span>
+                  </div>
+                  <div>
+                    <h2 className="text-slate-900 text-xl font-black tracking-tight">派單總覽</h2>
+                    <p className="text-slate-500 text-xs font-bold mt-0.5">
+                      總派單 {totalLeads} 筆 ・ 成交 {cappedSales} 筆 ・ 成交率 {convPct}%
+                    </p>
+                  </div>
+                </div>
+                {/* 成交率大圓 */}
+                <div className="hidden sm:flex items-center justify-center w-16 h-16 rounded-full border-4 border-emerald-400 bg-emerald-50">
+                  <span className="text-lg font-black text-emerald-600">{convPct}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* KPI 統計列 */}
+            <div className="grid grid-cols-3 border-b border-slate-100">
+              <div className="p-4 text-center border-r border-slate-100">
+                <div className="text-2xl font-black text-blue-600">{totalLeads}</div>
+                <div className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">📋 總派單</div>
+              </div>
+              <div className="p-4 text-center border-r border-slate-100">
+                <div className="text-2xl font-black text-emerald-600">{cappedSales}</div>
+                <div className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">✅ 已成交</div>
+              </div>
+              <div className="p-4 text-center">
+                <div className="text-2xl font-black text-red-500">{totalUnsold}</div>
+                <div className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">❌ 未成交</div>
+              </div>
+            </div>
+
+            {/* 圓餅圖區 */}
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* 左：派單分佈 — 單環（實色=成交, 淡色=未成交） */}
+              <div>
+                <h3 className="text-sm font-black text-slate-700 mb-2 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-xs">📊</span>
+                  派單分佈（派給誰 × 成交）
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold mb-3">
+                  實色＝已成交 ｜ 淡色＝未成交
+                </p>
+                <div className="h-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={interleavedData}
+                        cx="50%" cy="42%"
+                        innerRadius={55} outerRadius={110}
+                        paddingAngle={0}
+                        dataKey="value"
+                        nameKey="empName"
+                        label={renderInnerLabel}
+                        labelLine={false}
+                        stroke="none"
+                        legendType="none"
+                      >
+                        {interleavedData.map((d, i) => (
+                          <Cell
+                            key={`ic-${i}`}
+                            fill={d.type === 'sep' ? '#ffffff' : LEAD_COLORS[d.colorIdx % LEAD_COLORS.length]}
+                            fillOpacity={d.type === 'sales' ? 1 : d.type === 'unsold' ? 0.3 : 1}
+                            stroke={d.type === 'sep' ? '#fff' : 'none'}
+                            strokeWidth={d.type === 'sep' ? 2 : 0}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomDispatchTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* 自製 Legend */}
+                <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
+                  {topWithOther.map((emp, i) => (
+                    <div key={emp.name} className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LEAD_COLORS[i % LEAD_COLORS.length] }} />
+                      <span className="text-[10px] font-bold text-slate-500">{emp.name} 派{emp.leads}/成{emp.sales}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 右：成交狀況 */}
+              <div>
+                <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center text-xs">🎯</span>
+                  成交狀況
+                </h3>
+                <div className="h-[300px] relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieConvData}
+                        cx="50%" cy="45%"
+                        innerRadius={55} outerRadius={105}
+                        paddingAngle={3}
+                        dataKey="value"
+                        label={renderInnerLabel}
+                        labelLine={false}
+                        stroke="#fff" strokeWidth={2}
+                      >
+                        {pieConvData.map((entry, i) => (
+                          <Cell key={`cc-${i}`} fill={entry.name === '已成交' ? '#10b981' : '#ef4444'} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.15)', fontSize: '13px', fontWeight: 700 }}
+                        formatter={(v: number, name: string) => [`${v} 筆`, name]}
+                      />
+                      <Legend
+                        verticalAlign="bottom" height={40}
+                        iconType="circle" iconSize={10}
+                        formatter={(value: string) => {
+                          const color = value === '已成交' ? '#10b981' : '#ef4444';
+                          const count = value === '已成交' ? cappedSales : totalUnsold;
+                          return <span style={{ fontSize: '12px', fontWeight: 800, color }}>{value} {count}筆</span>;
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 派單順序卡片 (主視覺區) - 淺色主題 */}
       {employees.length > 0 && (
         <div className="bg-white rounded-2xl overflow-hidden shadow-xl border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">

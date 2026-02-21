@@ -173,8 +173,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
                                 </div>
                                 {/* 達標狀態 */}
                                 <div className={`text-[10px] font-bold text-center py-1 rounded-lg ${dailyTarget.onTarget
-                                        ? 'bg-emerald-500/20 text-emerald-400'
-                                        : 'bg-rose-500/20 text-rose-400'
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-rose-500/20 text-rose-400'
                                     }`}>
                                     {dailyTarget.onTarget ? '✅ 今日達標' : '⚠️ 今日未達標'}
                                 </div>
@@ -208,7 +208,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
                     <div className="grid grid-cols-2 gap-3">
                         {/* 總派單 */}
                         <div className="bg-blue-50 rounded-xl p-3 shadow-sm border border-blue-100 flex flex-col justify-between">
-                            <h3 className="text-blue-400 text-[9px] font-black uppercase tracking-widest mb-1">總派單 (Leads)</h3>
+                            <h3 className="text-blue-400 text-[9px] font-black uppercase tracking-widest mb-1">總派單</h3>
                             <div className="flex items-end gap-1">
                                 <span className="text-xl font-black text-blue-600 leading-none">
                                     {dispatchStats.totalLeads}
@@ -218,7 +218,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
                         </div>
                         {/* 派單失敗 */}
                         <div className="bg-slate-50 rounded-xl p-3 shadow-sm border border-slate-200 flex flex-col justify-between">
-                            <h3 className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-1">未成交 (Missed)</h3>
+                            <h3 className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-1">未成交</h3>
                             <div className="flex items-end gap-1">
                                 <span className="text-xl font-black text-slate-500 leading-none">
                                     {dispatchStats.failedLeads}

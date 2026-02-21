@@ -30,7 +30,8 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
             const startDate = new Date(today.getTime() - 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             const endDate = today.toISOString().split('T')[0];
             const records = await getEmployeeDailyRecordsDB(employee.id, startDate, endDate);
-            setDailyRecords(records);
+            // 過濾掉 rawData 缺失或異常的紀錄
+            setDailyRecords(records.filter(r => r.rawData && typeof r.rawData === 'object'));
         } catch (error) {
             console.error('載入員工每日紀錄失敗', error);
         }
@@ -83,13 +84,13 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
         }
 
         const total = filteredRecords.reduce((acc, r) => {
-            const convRate = parseFloat(r.data.todayConvRate.replace('%', ''));
+            const convRate = parseFloat((r.rawData.todayConvRate || '0').replace('%', '')) || 0;
             return {
                 convRate: acc.convRate + convRate,
-                orderValue: acc.orderValue + r.data.avgOrderValue,
-                leads: acc.leads + r.data.todayLeads,
-                revenue: acc.revenue + r.data.todayNetRevenue,
-                sales: acc.sales + r.data.todaySales
+                orderValue: acc.orderValue + (r.rawData.avgOrderValue || 0),
+                leads: acc.leads + (r.rawData.todayLeads || 0),
+                revenue: acc.revenue + (r.rawData.todayNetRevenue || 0),
+                sales: acc.sales + (r.rawData.todaySales || 0)
             };
         }, { convRate: 0, orderValue: 0, leads: 0, revenue: 0, sales: 0 });
 
@@ -106,9 +107,9 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
     const chartData = useMemo(() => {
         return filteredRecords.map(r => ({
             date: r.date.substring(5), // MM-DD
-            convRate: parseFloat(r.data.todayConvRate.replace('%', '')),
-            revenue: r.data.todayNetRevenue,
-            aov: r.data.avgOrderValue
+            convRate: parseFloat((r.rawData.todayConvRate || '0').replace('%', '')) || 0,
+            revenue: r.rawData.todayNetRevenue || 0,
+            aov: r.rawData.avgOrderValue || 0
         })).reverse();
     }, [filteredRecords]);
 
@@ -255,11 +256,11 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                     {filteredRecords.map((record) => (
                                         <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
                                             <td className="px-4 py-2 font-bold text-slate-600">{record.date}</td>
-                                            <td className="px-4 py-2 text-right">{record.data.todayLeads}</td>
-                                            <td className="px-4 py-2 text-right text-blue-600 font-bold">{record.data.todaySales}</td>
-                                            <td className="px-4 py-2 text-right text-green-600 font-bold">{record.data.todayConvRate}</td>
-                                            <td className="px-4 py-2 text-right">${record.data.avgOrderValue.toLocaleString()}</td>
-                                            <td className="px-4 py-2 text-right font-black">${record.data.todayNetRevenue.toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-right">{record.rawData?.todayLeads ?? 0}</td>
+                                            <td className="px-4 py-2 text-right text-blue-600 font-bold">{record.rawData?.todaySales ?? 0}</td>
+                                            <td className="px-4 py-2 text-right text-green-600 font-bold">{record.rawData?.todayConvRate ?? '0%'}</td>
+                                            <td className="px-4 py-2 text-right">${(record.rawData?.avgOrderValue ?? 0).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-right font-black">${(record.rawData?.todayNetRevenue ?? 0).toLocaleString()}</td>
                                         </tr>
                                     ))}
                                     {filteredRecords.length === 0 && (

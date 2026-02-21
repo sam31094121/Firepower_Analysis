@@ -31,6 +31,44 @@ const App: React.FC = () => {
   const [activeArea, setActiveArea] = useState<AppArea>('analysis');
   const [activeTab, setActiveTab] = useState<'dispatch' | 'operational'>('dispatch'); // 新增 Tab 狀態
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // v4.0 新功能教學通知列表
+  const NOTIFICATIONS = [
+    {
+      id: 'v4-daily-target',
+      icon: '🎯',
+      title: '目標落差滾動標準',
+      body: '「營運儀表」右上設定月目標後，「目標落差」卡片每天自動重算「今日需達」= 剩餘金額 ÷ 剩餘天數。未達標截截游泳，壓力自動滾動到剩餘天數。',
+    },
+    {
+      id: 'v4-sidebar-today',
+      icon: '📊',
+      title: '智慧派單內嵌 今日需達卡',
+      body: '左側欄「今日業績標準」取代原預估月收。尚未設定月目標請到「營運儀表」設定；設定後本卡即顯示實時達標狀態。',
+    },
+    {
+      id: 'v4-dual-month',
+      icon: '📅',
+      title: '雙月每日業績對比',
+      body: '營運儀表中間區塊，可自由選擇兩個月份做每日業績比對。預設顯示上月 vs 本月。每根 Bar 為單日實際業績，不是累計。',
+    },
+    {
+      id: 'v4-trend-charts',
+      icon: '📈',
+      title: 'AOV / 成交率 日趨勢圖',
+      body: '營運儀表最下方新增兩張折線圖：「每日成交率趨勢」與「每日平均客單價 (AOV) 趨勢」，顯示近 30 天波動情況。',
+    },
+  ];
+
+  // 從 localStorage 讀已讀 ID
+  const readIds = JSON.parse(localStorage.getItem('notif_read') || '[]') as string[];
+  const unreadCount = NOTIFICATIONS.filter(n => !readIds.includes(n.id)).length;
+
+  const markAllRead = () => {
+    const allIds = NOTIFICATIONS.map(n => n.id);
+    localStorage.setItem('notif_read', JSON.stringify(allIds));
+  };
 
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -50,6 +88,8 @@ const App: React.FC = () => {
   // 員工系統 state
   const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeProfile | null>(null);
+  // 離職員工名集合（用於在分析區過濾）
+  const [inactiveNames, setInactiveNames] = useState<Set<string>>(new Set());
 
   // 月曆刷新觸發器
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
@@ -73,14 +113,24 @@ const App: React.FC = () => {
   // 初始載入：奕心表、最新日期、已分析的 41 天分析
   useEffect(() => {
     const initDisplay = async () => {
+      // 先載入離職員工名單（用本地變數，避免 state 更新延遲）
+      let inactiveSet = new Set<string>();
+      try {
+        const allProfiles = await getAllEmployeeProfilesDB();
+        inactiveSet = new Set(allProfiles.filter(p => p.status === 'inactive' || p.accountStatus === 'disabled').map(p => p.name));
+        setInactiveNames(inactiveSet);
+      } catch (e) {
+        console.error('載入員工狀態失敗', e);
+      }
+
       const records = await getAllRecordsDB();
       const yishinAnalyzed = records
         .filter((r) => r.dataSource === 'yishin' && r.isAnalyzed && (r.analyzed41DaysData?.length ?? 0) > 0)
         .sort((a, b) => (b.archiveDate || '').localeCompare(a.archiveDate || ''));
       const latest = yishinAnalyzed[0];
       if (latest) {
-        const raw = latest.rawData || [];
-        const analyzed = latest.analyzed41DaysData || [];
+        const raw = (latest.rawData || []).filter(e => !inactiveNames.has(e.name));
+        const analyzed = (latest.analyzed41DaysData || []).filter(e => !inactiveNames.has(e.name));
         setCurrentArchiveDate(latest.archiveDate || '');
         setCurrentDataSource('yishin');
         setRawData([...raw]);
@@ -285,6 +335,7 @@ const App: React.FC = () => {
             // 第一次遇到此員工，只保留需要累加的原始數據欄位
             employeeMap.set(emp.name, {
               name: emp.name,
+              dayCount: 1,  // 追蹤出現天數
               todayLeads: emp.todayLeads || 0,
               todaySales: emp.todaySales || 0,
               todayNetRevenue: emp.todayNetRevenue || 0,
@@ -307,6 +358,7 @@ const App: React.FC = () => {
             });
           } else {
             // 累加所有原始數據欄位
+            existing.dayCount += 1;
             existing.todayLeads += emp.todayLeads || 0;
             existing.todaySales += emp.todaySales || 0;
             existing.todayNetRevenue += emp.todayNetRevenue || 0;
@@ -347,6 +399,7 @@ const App: React.FC = () => {
             // 當日新員工，直接加入
             employeeMap.set(emp.name, {
               name: emp.name,
+              dayCount: 1,
               todayLeads: emp.todayLeads || 0,
               todaySales: emp.todaySales || 0,
               todayNetRevenue: emp.todayNetRevenue || 0,
@@ -369,6 +422,7 @@ const App: React.FC = () => {
             });
           } else {
             // 累加當日數據
+            existing.dayCount += 1;
             existing.todayLeads += emp.todayLeads || 0;
             existing.todaySales += emp.todaySales || 0;
             existing.todayNetRevenue += emp.todayNetRevenue || 0;
@@ -394,12 +448,13 @@ const App: React.FC = () => {
 
       // 4. 重新計算衍生欄位（派單價值、成交率）
       const aggregatedData = Array.from(employeeMap.values()).map(emp => {
-        // 計算成交率 (基於累加後的數據)
-        const convRate = emp.todayLeads > 0
-          ? ((emp.todaySales / emp.todayLeads) * 100).toFixed(1)
-          : '0.0';
+        // 計算成交率: 累加後的 todaySales/todayLeads，上限 100%
+        const rawConvRate = emp.todayLeads > 0
+          ? (emp.todaySales / emp.todayLeads) * 100
+          : 0;
+        const convRate = Math.min(rawConvRate, 100).toFixed(1); // cap 100%
 
-        // 計算派單價值 (總業績 ÷ 派單數,基於累加後的數據)
+        // 計算派單價值 (總業績 ÷ 總派單數)
         const avgOrderValue = emp.todayLeads > 0
           ? Math.round(emp.todayNetRevenue / emp.todayLeads)
           : 0;
@@ -456,15 +511,18 @@ const App: React.FC = () => {
 
       const existingRecord = await getRecordByDateDB(archiveDate, currentDataSource);
 
-      // 保留原始數據：優先使用 rawData state，其次是 existingRecord.rawData，最後是當前 employees
-      const preservedRawData = rawData.length > 0
-        ? rawData
-        : (existingRecord?.rawData && existingRecord.rawData.length > 0)
-          ? existingRecord.rawData
+      // 保留原始數據：優先使用 Firestore 的 existingRecord.rawData（匯入時已正確存檔），
+      // 其次使用 state rawData，最後才用 currentData
+      const preservedRawData = (existingRecord?.rawData && existingRecord.rawData.length > 0)
+        ? existingRecord.rawData
+        : rawData.length > 0
+          ? rawData
           : currentData;
 
       console.log('💾 準備儲存分析結果:');
+      console.log('  - preservedRawData 來源:', existingRecord?.rawData?.length ? 'Firestore existingRecord' : rawData.length > 0 ? 'state rawData' : 'currentData');
       console.log('  - preservedRawData 筆數:', preservedRawData.length);
+      console.log('  - preservedRawData[0]:', preservedRawData[0]?.name, 'revenue:', preservedRawData[0]?.todayNetRevenue);
       console.log('  - analyzedData 筆數:', analyzedData.length);
 
       const updatedRecord: HistoryRecord = {
@@ -541,7 +599,7 @@ const App: React.FC = () => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [employees, showToast, currentArchiveDate, currentDataSource]);
+  }, [employees, rawData, dataView, showToast, currentArchiveDate, currentDataSource]);
 
   const saveToHistory = async () => {
     if (employees.length === 0 || isSaving) return;
@@ -579,14 +637,19 @@ const App: React.FC = () => {
   };
 
   const loadRecord = (record: HistoryRecord) => {
-    console.log('📂 載入記錄:', record.title);
+    console.log('📂 載入記錄:', record.title, '| archiveDate:', record.archiveDate);
     console.log('  - rawData 筆數:', record.rawData?.length || 0);
     console.log('  - analyzed41DaysData 筆數:', record.analyzed41DaysData?.length || 0);
     console.log('  - isAnalyzed:', record.isAnalyzed);
+    console.log('  - rawData[0]:', record.rawData?.[0]?.name, 'revenue:', record.rawData?.[0]?.todayNetRevenue);
+    console.log('  - 總業績:', record.rawData?.reduce((s, e) => s + (e.todayNetRevenue || 0), 0));
+    console.log('  - 當前 dataView:', dataView);
 
-    // 載入雙視角數據
-    const raw = record.rawData;
-    const analyzed = record.analyzed41DaysData;
+    // 載入雙視角數據（過濾離職員工）
+    const raw = (record.rawData || []).filter(e => !inactiveNames.has(e.name));
+    const analyzed = record.analyzed41DaysData
+      ? record.analyzed41DaysData.filter(e => !inactiveNames.has(e.name))
+      : undefined;
 
     setRawData([...raw]);
     setAnalyzed41DaysData(analyzed ? [...analyzed] : []);
@@ -709,7 +772,80 @@ const App: React.FC = () => {
               </span>
             </div>
           </div>
-          <ApiDiagnostics />
+          <div className="flex items-center gap-3">
+
+            {/* 🔔 通知鈴鐺 */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowNotifications(v => {
+                    if (!v) markAllRead(); // 打開時標記全讀
+                    return !v;
+                  });
+                }}
+                className="relative w-9 h-9 bg-white/10 hover:bg-white/20 rounded-xl flex items-center justify-center transition-all"
+              >
+                <span className="text-xl">🔔</span>
+                {/* 未讀紅點 */}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* 通知 Dropdown */}
+              {showNotifications && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+
+                    {/* 標頭 */}
+                    <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-between">
+                      <div>
+                        <div className="text-white font-black text-sm">🔔 新功能教學</div>
+                        <div className="text-blue-200 text-[10px] mt-0.5">Dashboard v4.0 更新說明</div>
+                      </div>
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="text-white/60 hover:text-white text-lg leading-none"
+                      >✕</button>
+                    </div>
+
+                    {/* 通知清單 */}
+                    <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
+                      {NOTIFICATIONS.map(n => {
+                        const isRead = readIds.includes(n.id);
+                        return (
+                          <div key={n.id} className={`px-4 py-3 ${isRead ? 'bg-white' : 'bg-blue-50'}`}>
+                            <div className="flex items-start gap-3">
+                              <span className="text-2xl shrink-0 mt-0.5">{n.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-slate-800 text-[13px] font-black">{n.title}</span>
+                                  {!isRead && (
+                                    <span className="shrink-0 text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">NEW</span>
+                                  )}
+                                </div>
+                                <p className="text-slate-500 text-xs leading-relaxed">{n.body}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 底部提示 */}
+                    <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 text-center">
+                      點擊鈴鐺即標記全讀
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {activeArea === 'input' && <ApiDiagnostics />}
+          </div>
         </div>
       </header>
 
@@ -853,9 +989,9 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {activeArea === 'analysis' ? (
-              employees.length > 0 ? (
-                // 根據 Tab 顯示不同儀表板
+            {employees.length > 0 ? (
+              activeArea === 'analysis' ? (
+                // 分析區：Tab 切換儀表板
                 activeTab === 'dispatch' ? (
                   <Dashboard
                     employees={employees}
@@ -869,19 +1005,26 @@ const App: React.FC = () => {
                   />
                 )
               ) : (
-                <div className="text-center py-20 bg-white rounded-3xl shadow-xl border border-slate-200">
-                  <div className="text-6xl mb-4">👋</div>
-                  <h3 className="text-xl font-black text-slate-800 mb-2">歡迎使用行銷火力分析系統</h3>
-                  <p className="text-slate-500 mb-8">請從左側選擇日期，或切換至「輸入區」匯入新數據</p>
-                  <button
-                    onClick={() => setActiveArea('input')}
-                    className="px-8 py-3 bg-blue-600 text-white rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
-                  >
-                    前往輸入數據
-                  </button>
-                </div>
+                // 輸入區：顯示火力圖表
+                <Dashboard
+                  employees={employees}
+                  onRefresh={refreshHistory}
+                  history={history}
+                />
               )
-            ) : null}
+            ) : (
+              <div className="text-center py-20 bg-white rounded-3xl shadow-xl border border-slate-200">
+                <div className="text-6xl mb-4">👋</div>
+                <h3 className="text-xl font-black text-slate-800 mb-2">歡迎使用行銷火力分析系統</h3>
+                <p className="text-slate-500 mb-8">請從左側選擇日期，或切換至「輸入區」匯入新數據</p>
+                <button
+                  onClick={() => setActiveArea('input')}
+                  className="px-8 py-3 bg-blue-600 text-white rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
+                >
+                  前往輸入數據
+                </button>
+              </div>
+            )}
 
           </div>
         </div>
@@ -890,7 +1033,6 @@ const App: React.FC = () => {
       {/* 員工詳細頁面 Modal */}
       {showEmployeeDirectory && (
         <EmployeeDirectory
-          employees={employees}
           onClose={() => setShowEmployeeDirectory(false)}
           onSelectEmployee={(emp) => {
             setSelectedEmployee(emp);
@@ -901,8 +1043,9 @@ const App: React.FC = () => {
 
       {selectedEmployee && (
         <EmployeeProfilePage
-          employeeId={selectedEmployee.id}
+          employee={selectedEmployee}
           onClose={() => setSelectedEmployee(null)}
+          onUpdate={() => { /* 重新整理清單 */ }}
         />
       )}
 

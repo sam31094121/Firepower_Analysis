@@ -163,7 +163,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
     const dailyConversionData = useMemo(() =>
         thisMonthHistory.map(r => ({
             date: (r.archiveDate || '').split('-')[2],
-            rate: (() => { const l = getRecordLeads(r); return l > 0 ? Math.round(getRecordSales(r) / l * 1000) / 10 : 0; })(),
+            rate: (() => { const l = getRecordLeads(r); return l > 0 ? Math.min(Math.round(getRecordSales(r) / l * 1000) / 10, 100) : 0; })(),
         })),
         [thisMonthHistory]);
 
@@ -180,13 +180,13 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
         [...currentEmployees]
             .sort((a, b) => (b.todayLeads > 0 ? b.todaySales / b.todayLeads : 0) - (a.todayLeads > 0 ? a.todaySales / a.todayLeads : 0))
             .slice(0, 10)
-            .map(e => ({ name: e.name, rate: e.todayLeads > 0 ? (e.todaySales / e.todayLeads) * 100 : 0 })),
+            .map(e => ({ name: e.name, rate: e.todayLeads > 0 ? Math.min((e.todaySales / e.todayLeads) * 100, 100) : 0 })),
         [currentEmployees]);
 
     const scatterData = useMemo(() =>
         currentEmployees.map(e => ({
             x: e.todayLeads, y: e.todaySales, z: e.todayNetRevenue,
-            name: e.name, rate: e.todayLeads > 0 ? (e.todaySales / e.todayLeads) * 100 : 0,
+            name: e.name, rate: e.todayLeads > 0 ? Math.min((e.todaySales / e.todayLeads) * 100, 100) : 0,
         })),
         [currentEmployees]);
 
@@ -251,7 +251,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                                     <div className="text-xs flex justify-between">
                                         <span className="text-slate-400">今日需達</span>
                                         <span className={`font-black ${kpis.todayRevenue >= kpis.dailyRequired
-                                                ? 'text-emerald-600' : 'text-rose-500'
+                                            ? 'text-emerald-600' : 'text-rose-500'
                                             }`}>
                                             ${kpis.dailyRequired.toLocaleString()}
                                         </span>
@@ -265,7 +265,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                                     </div>
                                     {/* 今日達標狀態 */}
                                     <div className={`text-[11px] font-bold mt-1 ${kpis.todayRevenue >= kpis.dailyRequired
-                                            ? 'text-emerald-500' : 'text-rose-400'
+                                        ? 'text-emerald-500' : 'text-rose-400'
                                         }`}>
                                         {kpis.todayRevenue >= kpis.dailyRequired
                                             ? `✅ 今日達標 (剩 ${kpis.remainingDays} 天)`
@@ -437,7 +437,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                 {/* 每日 AOV */}
                 <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100">
                     <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2">
-                        <span>💰</span> 每日平均客單價 (AOV) 趨勢
+                        <span>💰</span> 每日平均客單價趨勢
                     </h3>
                     <div className="h-[220px]">
                         <ResponsiveContainer width="100%" height="100%">
