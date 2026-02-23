@@ -18,9 +18,12 @@ import { speakPerformance, initVoiceSystem } from '../services/ttsService';
 
 interface Props {
   employees: EmployeeData[];
+  onRefresh?: () => void;
+  history?: any[];
+  dataSourceMode?: 'manual' | 'integrated';
 }
 
-const Dashboard: React.FC<Props> = ({ employees }) => {
+const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceMode = 'manual' }) => {
   const [speakingEmployeeId, setSpeakingEmployeeId] = useState<string | null>(null);
 
   // 初始化語音系統
@@ -36,8 +39,8 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
   const chartData = employees.map(emp => ({
     id: emp.id,
     name: emp.name,
-    aov: emp.avgOrderValue,
-    convRate: parseFloat(emp.todayConvRate.replace('%', ''))
+    aov: emp.avgOrderValue || 0,
+    convRate: parseFloat(String(emp.todayConvRate || '0%').replace('%', '')) || 0
   })).sort((a, b) => b.aov - a.aov);
 
   // 滾動到特定人員的邏輯
@@ -125,7 +128,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
 
         // POTENTIAL 員工額外判定：根據成交率決定應歸入哪一組
         if (e.category === EmployeeCategory.POTENTIAL) {
-          const conv = parseFloat(e.todayConvRate.replace('%', ''));
+          const conv = parseFloat(String(e.todayConvRate || '0%').replace('%', '')) || 0;
 
           // 成交率 >= 30% 且派單價值高 → 歸入火力組
           if (conv >= 30 && e.avgOrderValue >= 5000 && cat === EmployeeCategory.FIREPOWER) return true;
@@ -215,8 +218,12 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
           { name: '未成交', value: totalUnsold }
         ].filter(d => d.value > 0);
 
+        if (pieConvData.length === 0) {
+          pieConvData.push({ name: '無數據', value: 1 });
+        }
+
         const LEAD_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6', '#f97316', '#94a3b8'];
-        const CONV_COLORS = ['#10b981', '#ef4444'];
+        const CONV_COLORS = ['#10b981', '#ef4444', '#cbd5e1']; // 新增一個灰色給無數據用
 
         // 內部 label：只顯示百分比（跳過分隔 slice）
         const RADIAN = Math.PI / 180;
@@ -266,7 +273,15 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                     <span className="text-2xl">🥧</span>
                   </div>
                   <div>
-                    <h2 className="text-slate-900 text-xl font-black tracking-tight">派單總覽</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-slate-900 text-xl font-black tracking-tight">派單總覽</h2>
+                      {dataSourceMode === 'integrated' && (
+                        <span className="bg-indigo-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                          <span className="w-1 h-1 bg-white rounded-full animate-pulse"></span>
+                          雙軌模式
+                        </span>
+                      )}
+                    </div>
                     <p className="text-slate-500 text-xs font-bold mt-0.5">
                       總派單 {totalLeads} 筆 ・ 成交 {cappedSales} 筆 ・ 成交率 {convPct}%
                     </p>
@@ -306,34 +321,34 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                 <p className="text-[10px] text-slate-400 font-bold mb-3">
                   實色＝已成交 ｜ 淡色＝未成交
                 </p>
-                <div className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={interleavedData}
-                        cx="50%" cy="42%"
-                        innerRadius={55} outerRadius={110}
-                        paddingAngle={0}
-                        dataKey="value"
-                        nameKey="empName"
-                        label={renderInnerLabel}
-                        labelLine={false}
-                        stroke="none"
-                        legendType="none"
-                      >
-                        {interleavedData.map((d, i) => (
-                          <Cell
-                            key={`ic-${i}`}
-                            fill={d.type === 'sep' ? '#ffffff' : LEAD_COLORS[d.colorIdx % LEAD_COLORS.length]}
-                            fillOpacity={d.type === 'sales' ? 1 : d.type === 'unsold' ? 0.3 : 1}
-                            stroke={d.type === 'sep' ? '#fff' : 'none'}
-                            strokeWidth={d.type === 'sep' ? 2 : 0}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomDispatchTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="h-[320px] w-full flex items-center justify-center overflow-visible">
+                  <PieChart width={400} height={320}>
+                    <Pie
+                      data={interleavedData}
+                      cx="50%" cy="50%"
+                      innerRadius={80} outerRadius={120}
+                      paddingAngle={0}
+                      dataKey="value"
+                      nameKey="empName"
+                      label={renderInnerLabel}
+                      labelLine={false}
+                      stroke="none"
+                      legendType="none"
+                    >
+                      {interleavedData.length > 0 ? interleavedData.map((d, i) => (
+                        <Cell
+                          key={`ic-${i}`}
+                          fill={d.type === 'sep' ? '#ffffff' : LEAD_COLORS[d.colorIdx % LEAD_COLORS.length]}
+                          fillOpacity={d.type === 'sales' ? 1 : d.type === 'unsold' ? 0.3 : 1}
+                          stroke={d.type === 'sep' ? '#fff' : 'none'}
+                          strokeWidth={d.type === 'sep' ? 2 : 0}
+                        />
+                      )) : (
+                        <Cell key="empty" fill="#f1f5f9" />
+                      )}
+                    </Pie>
+                    <Tooltip content={<CustomDispatchTooltip />} />
+                  </PieChart>
                 </div>
                 {/* 自製 Legend */}
                 <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
@@ -352,38 +367,37 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   <span className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center text-xs">🎯</span>
                   成交狀況
                 </h3>
-                <div className="h-[300px] relative">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieConvData}
-                        cx="50%" cy="45%"
-                        innerRadius={55} outerRadius={105}
-                        paddingAngle={3}
-                        dataKey="value"
-                        label={renderInnerLabel}
-                        labelLine={false}
-                        stroke="#fff" strokeWidth={2}
-                      >
-                        {pieConvData.map((entry, i) => (
-                          <Cell key={`cc-${i}`} fill={entry.name === '已成交' ? '#10b981' : '#ef4444'} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.15)', fontSize: '13px', fontWeight: 700 }}
-                        formatter={(v: number, name: string) => [`${v} 筆`, name]}
-                      />
-                      <Legend
-                        verticalAlign="bottom" height={40}
-                        iconType="circle" iconSize={10}
-                        formatter={(value: string) => {
-                          const color = value === '已成交' ? '#10b981' : '#ef4444';
-                          const count = value === '已成交' ? cappedSales : totalUnsold;
-                          return <span style={{ fontSize: '12px', fontWeight: 800, color }}>{value} {count}筆</span>;
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="h-[300px] w-full relative flex items-center justify-center overflow-visible">
+                  <PieChart width={400} height={300}>
+                    <Pie
+                      data={pieConvData}
+                      cx="50%" cy="45%"
+                      innerRadius={70} outerRadius={110}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={renderInnerLabel}
+                      labelLine={false}
+                      stroke="#fff" strokeWidth={2}
+                    >
+                      {pieConvData.map((entry, i) => {
+                        const fillcolor = entry.name === '已成交' ? '#10b981' : entry.name === '未成交' ? '#ef4444' : '#cbd5e1';
+                        return <Cell key={`cc-${i}`} fill={fillcolor} />;
+                      })}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.15)', fontSize: '13px', fontWeight: 700 }}
+                      formatter={(v: number, name: string) => [`${v} 筆`, name]}
+                    />
+                    <Legend
+                      verticalAlign="bottom" height={40}
+                      iconType="circle" iconSize={10}
+                      formatter={(value: string) => {
+                        const color = value === '已成交' ? '#10b981' : value === '未成交' ? '#ef4444' : '#94a3b8';
+                        const count = value === '已成交' ? cappedSales : value === '未成交' ? totalUnsold : 0;
+                        return <span style={{ fontSize: '12px', fontWeight: 800, color }}>{value} {count}筆</span>;
+                      }}
+                    />
+                  </PieChart>
                 </div>
               </div>
             </div>
@@ -496,7 +510,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                 <div>
                   <div className="text-[10px] text-rose-600 font-black uppercase tracking-widest mb-1">團隊平均成交率</div>
                   <div className="text-2xl font-black text-rose-600 tabular-nums">
-                    {(employees.reduce((sum, e) => sum + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length).toFixed(1)}%
+                    {(employees.reduce((sum, e) => sum + (parseFloat(String(e.todayConvRate || '0%').replace('%', '')) || 0), 0) / (employees.length || 1)).toFixed(1)}%
                   </div>
                 </div>
                 <div className="w-12 h-12 bg-rose-500 rounded-lg flex items-center justify-center text-2xl">
@@ -507,7 +521,7 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
           </div>
 
           <div className="h-[400px] w-full" style={{ minHeight: 400 }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={400}>
+            <ResponsiveContainer width="99%" height="100%" minHeight={400} minWidth={1}>
               <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
@@ -605,8 +619,8 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
               {employees
                 .filter(emp => {
                   // 星探判定邏輯
-                  const conv = parseFloat(emp.todayConvRate.replace('%', ''));
-                  const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
+                  const conv = parseFloat(String(emp.todayConvRate || '0%').replace('%', '')) || 0;
+                  const teamAvgConv = employees.reduce((acc, e) => acc + (parseFloat(String(e.todayConvRate || '0%').replace('%', '')) || 0), 0) / (employees.length || 1);
                   const sortedLeads = [...employees].sort((a, b) => a.todayLeads - b.todayLeads);
                   const medianLeads = sortedLeads[Math.floor(sortedLeads.length / 2)]?.todayLeads || 0;
 
@@ -615,9 +629,9 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                 })
                 .map((emp) => {
                   const dispatchRank = dispatchOrder.findIndex(de => de.id === emp.id) + 1;
-                  const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
-                  const teamAvgAov = employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / employees.length;
-                  const conv = parseFloat(emp.todayConvRate.replace('%', ''));
+                  const teamAvgConv = employees.reduce((acc, e) => acc + (parseFloat(String(e.todayConvRate || '0%').replace('%', '')) || 0), 0) / (employees.length || 1);
+                  const teamAvgAov = employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / (employees.length || 1);
+                  const conv = parseFloat(String(emp.todayConvRate || '0%').replace('%', '')) || 0;
 
                   return (
                     <div
@@ -719,9 +733,9 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                   );
                 })}
               {employees.filter(emp => {
-                const conv = parseFloat(emp.todayConvRate.replace('%', ''));
-                const teamAvgConv = employees.reduce((acc, e) => acc + parseFloat(e.todayConvRate.replace('%', '')), 0) / employees.length;
-                const sortedLeads = [...employees].sort((a, b) => a.todayLeads - b.todayLeads);
+                const conv = parseFloat(String(emp.todayConvRate || '0%').replace('%', '')) || 0;
+                const teamAvgConv = employees.reduce((acc, e) => acc + (parseFloat(String(e.todayConvRate || '0%').replace('%', '')) || 0), 0) / (employees.length || 1);
+                const sortedLeads = [...employees].sort((a, b) => (a.todayLeads || 0) - (b.todayLeads || 0));
                 const medianLeads = sortedLeads[Math.floor(sortedLeads.length / 2)]?.todayLeads || 0;
                 return emp.category === EmployeeCategory.POTENTIAL || (conv >= teamAvgConv + 5 && emp.todayLeads <= medianLeads * 0.6);
               }).length === 0 && (
@@ -814,9 +828,15 @@ const Dashboard: React.FC<Props> = ({ employees }) => {
                           <div className="text-[8px] text-slate-400 font-bold uppercase">派單價值</div>
                           <div className="text-xs font-bold text-slate-800">{emp.avgOrderValue.toLocaleString()}</div>
                         </div>
-                        <div className="col-span-3 bg-slate-900 px-3 py-2 rounded flex justify-between items-center">
-                          <span className="text-[8px] text-white/40 font-bold uppercase tracking-widest">追續總額</span>
-                          <span className="text-xs font-bold text-white tabular-nums">{emp.todayFollowupSales.toLocaleString()}</span>
+                        <div className="col-span-3 grid grid-cols-2 gap-2 mt-1">
+                          <div className="bg-slate-900 px-3 py-2 rounded flex justify-between items-center border border-white/10">
+                            <span className="text-[8px] text-white/40 font-bold uppercase tracking-widest">追單: <span className="text-blue-400">{emp.followupCount || 0}</span></span>
+                            <span className="text-xs font-bold text-white tabular-nums">${emp.todayFollowupSales?.toLocaleString() || 0}</span>
+                          </div>
+                          <div className="bg-slate-900 px-3 py-2 rounded flex justify-between items-center border border-white/10">
+                            <span className="text-[8px] text-white/40 font-bold uppercase tracking-widest">續單: <span className="text-purple-400">{emp.renewalCount || 0}</span></span>
+                            <span className="text-xs font-bold text-white tabular-nums">${emp.todayRenewalSales?.toLocaleString() || 0}</span>
+                          </div>
                         </div>
                       </div>
 

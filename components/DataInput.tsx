@@ -5,6 +5,9 @@ import { validateEmployeeData } from '../services/dataValidation';
 import { EmployeeData, EmployeeCategory, ValidationResult } from '../types';
 import { calculateRankings } from '../utils/rankingCalculator';
 import ValidationModal from './ValidationModal';
+import OrderImport from './OrderImport';
+import DispatchInput from './DispatchInput';
+import MergePanel from './MergePanel';
 
 interface Props {
   onDataLoaded: (data: EmployeeData[]) => void;
@@ -16,7 +19,7 @@ const EXCEL_HEADERS = ["行銷", "派單數", "派成數", "追續數", "總業�
 const COL_COUNT = EXCEL_HEADERS.length;
 
 const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing }) => {
-  const [activeTab, setActiveTab] = useState<'paste' | 'image'>('paste');
+  const [activeTab, setActiveTab] = useState<'paste' | 'image' | 'order' | 'dispatch' | 'merge'>('paste');
   const [loadingImage, setLoadingImage] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingData, setPendingData] = useState<EmployeeData[] | null>(null);
@@ -181,12 +184,15 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
 
   return (
     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-6 flex flex-col transition-all">
-      <div className="flex bg-slate-100 border-b border-slate-200">
-        <button type="button" onClick={() => setActiveTab('paste')} disabled={isAnalyzing} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'paste' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>EXCEL 表格模式</button>
-        <button type="button" onClick={() => setActiveTab('image')} disabled={isAnalyzing} className={`flex-1 py-4 text-[11px] font-black tracking-widest transition-all ${activeTab === 'image' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>AI 報表辨識</button>
+      <div className="flex bg-slate-100 border-b border-slate-200 overflow-x-auto">
+        <button type="button" onClick={() => setActiveTab('paste')} disabled={isAnalyzing} className={`flex-none px-3 py-4 text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${activeTab === 'paste' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>EXCEL 表格</button>
+        <button type="button" onClick={() => setActiveTab('order')} disabled={isAnalyzing} className={`flex-none px-3 py-4 text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${activeTab === 'order' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>📦 訂單匯入</button>
+        <button type="button" onClick={() => setActiveTab('dispatch')} disabled={isAnalyzing} className={`flex-none px-3 py-4 text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${activeTab === 'dispatch' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>📌 派單輸入</button>
+        <button type="button" onClick={() => setActiveTab('merge')} disabled={isAnalyzing} className={`flex-none px-3 py-4 text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${activeTab === 'merge' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>⚡ 數據合併</button>
+        <button type="button" onClick={() => setActiveTab('image')} disabled={isAnalyzing} className={`flex-none px-3 py-4 text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${activeTab === 'image' ? 'text-blue-600 bg-white border-b-2 border-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>AI 辨識</button>
       </div>
 
-      <div className="p-4" onPaste={handlePaste}>
+      <div className="p-4" onPaste={activeTab === 'paste' ? handlePaste : undefined}>
         {activeTab === 'paste' ? (
           <div className="space-y-6">
             <div className="overflow-x-auto border-2 rounded-xl border-slate-200 shadow-inner bg-slate-50">
@@ -251,6 +257,19 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
               </button>
             </div>
           </div>
+        ) : activeTab === 'order' ? (
+          /* ── 訂單匯入 Tab ── */
+          <OrderImport
+            onImportSuccess={(count) => {
+              console.log(`訂單匯入完成：${count} 筆`);
+            }}
+          />
+        ) : activeTab === 'dispatch' ? (
+          /* ── 派單輸入 Tab ── */
+          <DispatchInput />
+        ) : activeTab === 'merge' ? (
+          /* ── 數據合併 Tab ── */
+          <MergePanel />
         ) : (
           <div className="space-y-4">
             <div className={`border-4 border-dashed border-slate-100 rounded-2xl p-12 text-center hover:border-blue-200 hover:bg-blue-50/30 transition-all relative min-h-[240px] flex flex-col items-center justify-center group ${loadingImage ? 'pointer-events-none' : ''}`}>

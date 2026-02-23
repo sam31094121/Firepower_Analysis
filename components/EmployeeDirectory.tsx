@@ -158,7 +158,7 @@ const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <h3 className="font-black text-slate-900 text-base">{emp.name}</h3>
+                                            <h3 className="font-black text-slate-900 text-base">{emp.displayName || emp.name}</h3>
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${emp.status === 'active'
                                                 ? 'bg-green-100 text-green-700'
                                                 : 'bg-rose-100 text-rose-700'

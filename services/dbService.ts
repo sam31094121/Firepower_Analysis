@@ -96,10 +96,9 @@ export const clearAllRecordsDB = async (): Promise<void> => {
   }
 };
 
-// 根據歸檔日期查詢紀錄（YYYY-MM-DD）
 export const getRecordByDateDB = async (
   archiveDate: string,
-  dataSource?: 'minshi' | 'yishin' | 'combined'
+  dataSource?: 'minshi' | 'yishin' | 'combined' | 'integrated'
 ): Promise<HistoryRecord | null> => {
   try {
     const recordsRef = collection(db, COLLECTION_RECORDS);

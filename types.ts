@@ -11,17 +11,26 @@ export interface EmployeeData {
   id: string;
   name: string;
 
-  // 核心指標映射 (基於最新 11 欄位結構：行銷, 派單數, 派成數, 追續數, 總業績, 派單價值, 追續總額, 業績排名, 追續排名, 均價排名, 派單成交率)
-  todayLeads: number;          // 派單數
-  todaySales: number;          // 派成數
-  todayFollowupSales: number;  // 追續總額
+  // 核心指標映射 (基於最新欄位結構：行銷, 派單數, 派成數, 追單數, 續單數, 總業績, 派單均價, 追單總額, 續單總額)
+  todayLeads: number;          // 派單數 (分母)
+  todaySales: number;          // 派成數 (分子)
+  todayFollowupSales: number;  // 追單業績
+  todayRenewalSales: number;   // 續單業績
   todayNetRevenue: number;     // 總業績
   avgOrderValue: number;       // 派單價值
-  followupCount: number;       // 追續數
+  followupCount: number;       // 追單數量
+  renewalCount: number;        // 續單數量
   revenueRank: string;         // 業績排名
   followupRank: string;        // 追續排名
   avgPriceRank: string;        // 均價排名
   todayConvRate: string;       // 派單成交率
+
+  // 頻道業績拆分 (Phase 4)
+  yishinRevenue: number;       // 三立奕心業績
+  minshiRevenue: number;       // 民視商品業績
+  companyRevenue: number;      // 公司商品業績
+  giftCount: number;           // 贈品數量
+  otherRevenue: number;        // 其他業績
 
   // AI 決策與分類
   category?: EmployeeCategory;
@@ -52,7 +61,7 @@ export interface HistoryRecord {
   title: string;
   date: string;
   archiveDate?: string;      // 歸檔日期（YYYY-MM-DD），用於月曆選擇
-  dataSource?: 'minshi' | 'yishin' | 'combined';  // 表格來源
+  dataSource?: 'minshi' | 'yishin' | 'combined' | 'integrated';  // 表格來源
 
   // 雙視角數據系統
   rawData: EmployeeData[];   // 當日原始數據（永久保留）
@@ -68,7 +77,7 @@ export interface HistoryRecord {
     endDate: string;           // 結束日期 "2026-02-12"
     actualRecordCount: number; // 實際抓到的記錄筆數
     expectedDays: number;      // 預期天數 (41)
-    dataSource: 'minshi' | 'yishin' | 'combined';
+    dataSource: 'minshi' | 'yishin' | 'combined' | 'integrated';
   };
 
   totalRevenue: number;
@@ -91,6 +100,7 @@ export interface ChatMessage {
 export interface EmployeeProfile {
   id: string;                    // 員工唯一 ID（使用姓名作為 ID）
   name: string;                  // 員工姓名
+  displayName?: string;          // 自訂顯示名稱（如：珍珠）
   status: 'active' | 'inactive'; // 在職/離職
   accountStatus: 'enabled' | 'disabled'; // 帳號啟用/停用
   joinDate: string;              // 加入日期（YYYY-MM-DD）
@@ -194,3 +204,55 @@ export interface ChartData {
     [key: string]: any;
   }[];
 }
+
+// ==================== 雙軌數據系統型別 ====================
+
+/** 訂單系統匯出的單筆訂單（來源 A） */
+export interface Order {
+  orderId: string;          // 訂單編號（去重鍵）
+  orderType: string;        // 單據類型
+  orderStatus: string;      // 訂單狀態（例如：收貨確認、拒收、取消）
+  date: string;             // 訂購日期 YYYY-MM-DD
+  empId: string;            // alias 對應後的員工 ID（找不到時為 '__unknown__'）
+  rawName: string;          // 原始行銷人員名稱（保留）
+  amount: number;           // 金額
+  product: string;          // 訂購產品
+  productCategory: string;  // 商品類別
+  dataSource: 'yishin' | 'minshi' | 'company' | 'gift' | 'other'; // 系統自動辨識的歸屬頻道 (Phase 4)
+  rawData: Record<string, any>; // 原始 28 欄完整資料
+  importedAt: string;       // 匯入時間戳
+}
+
+/** 行政派單紀錄（來源 B） */
+export interface Dispatch {
+  id: string;               // {date}_{empId}
+  date: string;             // YYYY-MM-DD
+  empId: string;
+  empName: string;          // 顯示用
+  totalDispatches: number;  // 總派單數
+  updatedAt: string;
+}
+
+/** 員工別名對應（擴充現有 employeeProfiles） */
+export interface AliasMap {
+  [alias: string]: string;  // alias → empId
+}
+
+/** Excel 解析後的單列原始資料（對應 28 個表頭欄位） */
+export interface ParsedOrderRow {
+  raw: Record<string, any>;    // 全部欄位原始值
+  orderId: string;
+  orderType: string;
+  orderStatus: string;
+  date: string;
+  rawName: string;
+  amount: number;
+  product: string;
+  productCategory: string;
+  dataSource: 'yishin' | 'minshi' | 'company' | 'gift' | 'other'; // 系統辨識結果
+  isValid: boolean;            // 日期/金額基本格式是否正確
+  warning?: string;            // e.g. 找不到行銷人員對應
+  empId: string;               // alias 對應後的員工 ID（'__unknown__' = 未對應）
+  empName: string;             // 對應到的員工正式姓名（未找到時為空）
+}
+

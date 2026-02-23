@@ -20,8 +20,9 @@ const formatNumberToCurrency = (num: number): string => {
  */
 const formatPercentage = (percentStr: string): string => {
     // 移除 % 符號並轉為數字
-    const value = parseFloat(percentStr.replace('%', ''));
-    if (isNaN(value)) return percentStr;
+    const safeStr = percentStr || '0%';
+    const value = parseFloat(safeStr.replace('%', ''));
+    if (isNaN(value)) return safeStr;
     return `百分之${value}`;
 };
 

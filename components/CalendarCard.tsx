@@ -2,14 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { getAllRecordsDB } from '../services/dbService';
 import { HistoryRecord } from '../types';
 
+import { getAvailableIntegratedDates } from '../services/mergeService';
+
 interface CalendarCardProps {
+    history: HistoryRecord[];
     onDateSelect: (date: string, dataSource: 'minshi' | 'yishin' | 'combined') => void;
-    refreshTrigger?: number; // 用於觸發重新載入日期標記
-    defaultDataSource?: 'minshi' | 'yishin' | 'combined'; // 初始數據源
-    selectedDateFromParent?: string | null; // 父層載入的選中日期，月曆同步顯示
+    refreshTrigger?: number; // 留著相容，但已不需依賴此觸發重拉 DB
+    defaultDataSource?: 'minshi' | 'yishin' | 'combined';
+    selectedDateFromParent?: string | null;
+    dataSourceMode?: 'manual' | 'integrated';
+    onModeChange?: (mode: 'manual' | 'integrated') => void;
 }
 
-const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigger, defaultDataSource = 'yishin', selectedDateFromParent }) => {
+const CalendarCard: React.FC<CalendarCardProps> = ({
+    history, onDateSelect, refreshTrigger, defaultDataSource = 'yishin',
+    selectedDateFromParent, dataSourceMode = 'manual', onModeChange
+}) => {
     const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
     const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
     const [dataSource, setDataSource] = useState<'minshi' | 'yishin' | 'combined'>(defaultDataSource);
@@ -35,22 +43,28 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigge
 
     // 獲取當月所有有數據的日期
     const loadRecordDates = async () => {
-        try {
-            const records = await getAllRecordsDB();
-            const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-            const dates = records
+        const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+        if (dataSourceMode === 'integrated') {
+            try {
+                const dates = await getAvailableIntegratedDates(yearMonth);
+                setRecordDates(new Set(dates));
+            } catch (error) {
+                console.error("Failed to load integrated dates:", error);
+                setRecordDates(new Set());
+            }
+        } else {
+            const dates = history
                 .filter(r => r.archiveDate?.startsWith(yearMonth) && r.dataSource === dataSource)
                 .map(r => r.archiveDate!)
                 .filter(Boolean);
             setRecordDates(new Set(dates));
-        } catch (e) {
-            console.error('載入日期標記失敗', e);
         }
     };
 
     useEffect(() => {
         loadRecordDates();
-    }, [currentYear, currentMonth, dataSource, refreshTrigger]);
+    }, [currentYear, currentMonth, dataSource, refreshTrigger, history, dataSourceMode]);
 
     // 生成月曆格子
     const generateCalendar = () => {
@@ -78,13 +92,12 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigge
         // 設定選中日期
         setSelectedDate(dateStr);
 
-        // 觸發回調
-        onDateSelect(dateStr, dataSource);
-
-        // 等待一下後重新載入記錄日期（以便即時更新綠色狀態）
-        setTimeout(async () => {
-            await loadRecordDates();
-        }, 500);
+        // 觸發回調 (若為雙軌整合，我們固定傳回 combined 搭配外部 dataSourceMode 判斷)
+        if (dataSourceMode === 'integrated') {
+            onDateSelect(dateStr, 'combined');
+        } else {
+            onDateSelect(dateStr, dataSource);
+        }
     };
 
     const handlePrevMonth = () => {
@@ -112,36 +125,57 @@ const CalendarCard: React.FC<CalendarCardProps> = ({ onDateSelect, refreshTrigge
         <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-slate-200">
             <h3 className="text-lg font-black text-slate-800 mb-4">數據歸檔月曆</h3>
 
-            {/* 表格類型選擇 */}
-            <div className="mb-4 flex gap-2">
+            {/* 大模式切換 */}
+            <div className="flex gap-2 mb-4 bg-slate-100 p-1 rounded-xl">
                 <button
-                    onClick={() => setDataSource('minshi')}
-                    className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'minshi'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                    onClick={() => {
+                        onModeChange?.('manual');
+                        setDataSource(defaultDataSource);
+                    }}
+                    className={`flex-1 py-2 rounded-lg font-black text-sm transition-all focus:outline-none ${dataSourceMode === 'manual' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    民視表
+                    📝 舊式手動
                 </button>
                 <button
-                    onClick={() => setDataSource('yishin')}
-                    className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'yishin'
-                        ? 'bg-green-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                    onClick={() => onModeChange?.('integrated')}
+                    className={`flex-1 py-2 rounded-lg font-black text-sm transition-all focus:outline-none ${dataSourceMode === 'integrated' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    奕心表
-                </button>
-                <button
-                    onClick={() => setDataSource('combined')}
-                    className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'combined'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                >
-                    總和表
+                    ⚡ 雙軌合併
                 </button>
             </div>
+
+            {/* 表格類型選擇 (僅舊式手動顯示) */}
+            {dataSourceMode === 'manual' && (
+                <div className="mb-4 flex gap-2">
+                    <button
+                        onClick={() => setDataSource('minshi')}
+                        className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'minshi'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                    >
+                        民視表
+                    </button>
+                    <button
+                        onClick={() => setDataSource('yishin')}
+                        className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'yishin'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                    >
+                        奕心表
+                    </button>
+                    <button
+                        onClick={() => setDataSource('combined')}
+                        className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataSource === 'combined'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                    >
+                        總和表
+                    </button>
+                </div>
+            )}
 
             {/* 年月選擇 */}
             <div className="flex items-center justify-between mb-4">

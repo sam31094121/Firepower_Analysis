@@ -9,6 +9,8 @@ import {
 interface Props {
     history: HistoryRecord[];
     currentEmployees: EmployeeData[];
+    dataSourceMode?: 'manual' | 'integrated';
+    integratedTrend?: any[];
 }
 
 // ─── Helper: 取得某筆 record 的當日總業績 ───
@@ -31,7 +33,7 @@ const getRecordSales = (r: HistoryRecord): number =>
 const toMonthKey = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) => {
+const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history, dataSourceMode = 'manual', integratedTrend = [] }) => {
     const today = useMemo(() => new Date(), []);
     const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
     const thisMonthKey = toMonthKey(today);
@@ -56,12 +58,16 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
     // ─── 可用月份清單 (給 select) ───
     const availableMonths = useMemo(() => {
         const months = new Set<string>();
-        history.forEach(r => {
-            if (r.archiveDate) months.add(r.archiveDate.slice(0, 7));
-        });
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            integratedTrend.forEach(t => months.add(t.date.slice(0, 7)));
+        } else {
+            history.forEach(r => {
+                if (r.archiveDate) months.add(r.archiveDate.slice(0, 7));
+            });
+        }
         months.add(thisMonthKey);
         return Array.from(months).sort().reverse(); // 最新在前
-    }, [history, thisMonthKey]);
+    }, [history, thisMonthKey, dataSourceMode, integratedTrend]);
 
     // ─── 本月歷史紀錄 ───
     const thisMonthHistory = useMemo(() =>
@@ -76,7 +82,29 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
         const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 
         // 純歷史本月累計
-        const currentMonthTotal = thisMonthHistory.reduce((s, r) => s + getRecordRevenue(r), 0);
+        let currentMonthTotal = 0;
+        let todayRevenue = 0, latestLeads = 0, latestSales = 0, latestRevenue = 0;
+
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            currentMonthTotal = integratedTrend
+                .filter(t => t.date.startsWith(thisMonthKey))
+                .reduce((s, t) => s + (t.revenue || 0), 0);
+
+            const latestTrend = integratedTrend[integratedTrend.length - 1];
+            todayRevenue = latestTrend.revenue || 0;
+            latestLeads = latestTrend.leads || 0;
+            latestSales = latestTrend.sales || 0;
+            latestRevenue = latestTrend.revenue || 0;
+        } else {
+            currentMonthTotal = thisMonthHistory.reduce((s, r) => s + getRecordRevenue(r), 0);
+
+            const latestRec = thisMonthHistory[thisMonthHistory.length - 1];
+            todayRevenue = latestRec ? getRecordRevenue(latestRec) : 0;
+            latestLeads = latestRec ? getRecordLeads(latestRec) : 0;
+            latestSales = latestRec ? getRecordSales(latestRec) : 0;
+            latestRevenue = latestRec ? getRecordRevenue(latestRec) : 0;
+        }
+
         // 預估：線性比例
         const projectedRevenue = dayOfMonth > 0 ? Math.round(currentMonthTotal / dayOfMonth * daysInMonth) : 0;
         // Gap：若有設定目標則用目標，否則用預估
@@ -89,12 +117,6 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
         const remainingDays = Math.max(daysInMonth - dayOfMonth, 0);
         const dailyRequired = remainingDays > 0 ? Math.round(Math.max(gap, 0) / remainingDays) : 0;
 
-        // 最新一筆 history 的當日業績（用來判斷今日是否達到滾動標準）
-        const latestRec = thisMonthHistory[thisMonthHistory.length - 1];
-        const todayRevenue = latestRec ? getRecordRevenue(latestRec) : 0;
-        const latestLeads = latestRec ? getRecordLeads(latestRec) : 0;
-        const latestSales = latestRec ? getRecordSales(latestRec) : 0;
-        const latestRevenue = latestRec ? getRecordRevenue(latestRec) : 0;
         const avgConversionRate = latestLeads > 0 ? (latestSales / latestLeads) * 100 : 0;
         const avgOrderValue = latestSales > 0 ? latestRevenue / latestSales : 0;
 
@@ -103,17 +125,25 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
             avgConversionRate, avgOrderValue, dayOfMonth, daysInMonth,
             targetForGap, remainingDays, dailyRequired, todayRevenue,
         };
-    }, [thisMonthHistory, today, monthlyTarget]);
+    }, [thisMonthHistory, today, monthlyTarget, dataSourceMode, integratedTrend, thisMonthKey]);
 
     // ─── 推薦目標額（上月 × 1.1）───
     const recommendedTarget = useMemo(() => {
-        const lastMonthTotal = history
-            .filter(r => r.archiveDate?.startsWith(lastMonthKey))
-            .reduce((s, r) => s + getRecordRevenue(r), 0);
+        let lastMonthTotal = 0;
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            lastMonthTotal = integratedTrend
+                .filter(t => t.date.startsWith(lastMonthKey))
+                .reduce((s, t) => s + (t.revenue || 0), 0);
+        } else {
+            lastMonthTotal = history
+                .filter(r => r.archiveDate?.startsWith(lastMonthKey))
+                .reduce((s, r) => s + getRecordRevenue(r), 0);
+        }
+
         // 若上月有資料：× 1.1；否則用日均推算 × 1.1
         if (lastMonthTotal > 0) return Math.round(lastMonthTotal * 1.1);
         return Math.round(kpis.projectedRevenue * 1.1);
-    }, [history, lastMonthKey, kpis.projectedRevenue]);
+    }, [history, lastMonthKey, kpis.projectedRevenue, dataSourceMode, integratedTrend]);
 
     const saveTarget = useCallback(() => {
         const val = Number(targetInput.replace(/,/g, ''));
@@ -125,25 +155,43 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
     }, [targetInput, targetKey]);
 
     // ─── 每日業績波動 (Bar Chart) ───
-    const dailyRevenueData = useMemo(() =>
-        thisMonthHistory.map(r => ({
+    const dailyRevenueData = useMemo(() => {
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            return integratedTrend.map(t => ({
+                date: t.date.split('-')[2],
+                revenue: t.revenue,
+                isToday: t.date === todayStr,
+            }));
+        }
+        return thisMonthHistory.map(r => ({
             date: (r.archiveDate || '').split('-')[2],
             revenue: getRecordRevenue(r),
             isToday: r.archiveDate === todayStr,
-        })),
-        [thisMonthHistory, todayStr]);
+        }));
+    }, [thisMonthHistory, todayStr, dataSourceMode, integratedTrend]);
 
     // ─── 雙月對比 (Bar Chart, 每日並排，顯示兩月各天業績) ───
     const dualMonthData = useMemo(() => {
         const mapA = new Map<number, number>();
         const mapB = new Map<number, number>();
 
-        history.filter(r => r.archiveDate?.startsWith(monthA)).forEach(r => {
-            mapA.set(new Date(r.archiveDate!).getDate(), getRecordRevenue(r));
-        });
-        history.filter(r => r.archiveDate?.startsWith(monthB)).forEach(r => {
-            mapB.set(new Date(r.archiveDate!).getDate(), getRecordRevenue(r));
-        });
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            integratedTrend.filter(t => t.date.startsWith(monthA)).forEach(t => {
+                const day = parseInt(t.date.split('-')[2], 10);
+                mapA.set(day, t.revenue || 0);
+            });
+            integratedTrend.filter(t => t.date.startsWith(monthB)).forEach(t => {
+                const day = parseInt(t.date.split('-')[2], 10);
+                mapB.set(day, t.revenue || 0);
+            });
+        } else {
+            history.filter(r => r.archiveDate?.startsWith(monthA)).forEach(r => {
+                mapA.set(new Date(r.archiveDate!).getDate(), getRecordRevenue(r));
+            });
+            history.filter(r => r.archiveDate?.startsWith(monthB)).forEach(r => {
+                mapB.set(new Date(r.archiveDate!).getDate(), getRecordRevenue(r));
+            });
+        }
 
         // 合併天數
         const days = new Set([...mapA.keys(), ...mapB.keys()]);
@@ -157,23 +205,35 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
         const totalB = Array.from(mapB.values()).reduce((s, v) => s + v, 0);
 
         return { data: result, totalA, totalB };
-    }, [history, monthA, monthB]);
+    }, [history, monthA, monthB, dataSourceMode, integratedTrend]);
 
     // ─── 每日成交率折線 ───
-    const dailyConversionData = useMemo(() =>
-        thisMonthHistory.map(r => ({
+    const dailyConversionData = useMemo(() => {
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            return integratedTrend.map(t => ({
+                date: t.date.split('-')[2],
+                rate: t.rate,
+            }));
+        }
+        return thisMonthHistory.map(r => ({
             date: (r.archiveDate || '').split('-')[2],
             rate: (() => { const l = getRecordLeads(r); return l > 0 ? Math.min(Math.round(getRecordSales(r) / l * 1000) / 10, 100) : 0; })(),
-        })),
-        [thisMonthHistory]);
+        }));
+    }, [thisMonthHistory, dataSourceMode, integratedTrend]);
 
     // ─── 每日 AOV 折線 ───
-    const dailyAOVData = useMemo(() =>
-        thisMonthHistory.map(r => ({
+    const dailyAOVData = useMemo(() => {
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            return integratedTrend.map(t => ({
+                date: t.date.split('-')[2],
+                aov: t.avgOrderValue,
+            }));
+        }
+        return thisMonthHistory.map(r => ({
             date: (r.archiveDate || '').split('-')[2],
             aov: (() => { const s = getRecordSales(r); return s > 0 ? Math.round(getRecordRevenue(r) / s) : 0; })(),
-        })),
-        [thisMonthHistory]);
+        }));
+    }, [thisMonthHistory, dataSourceMode, integratedTrend]);
 
     // ─── 排行榜 & 散點 ───
     const conversionRankData = useMemo(() =>
@@ -205,6 +265,19 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 space-y-6">
+
+            {/* 雙軌模式提示標籤 (僅整合模式顯示) */}
+            {dataSourceMode === 'integrated' && (
+                <div className="bg-indigo-600/10 border border-indigo-200 rounded-2xl px-6 py-3 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse" />
+                        <span className="text-indigo-900 font-black text-sm tracking-tight">⚡ 營運分析：雙軌整合數據模式</span>
+                    </div>
+                    <span className="text-indigo-600 text-[10px] font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                        今日數據：訂單+派單彙整 ・ 趨勢：歷史手動數據
+                    </span>
+                </div>
+            )}
 
             {/* ── Row 1: KPI Cards (2 cards + Target) ── */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -368,7 +441,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                 </div>
 
                 <div className="h-[280px]">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                         <BarChart data={dualMonthData.data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }} barGap={2}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
@@ -391,7 +464,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                     <span>📊</span> 本月每日業績波動
                 </h3>
                 <div className="h-[220px]">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                         <BarChart data={dailyRevenueData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
@@ -419,7 +492,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                         <span>🎯</span> 每日成交率趨勢
                     </h3>
                     <div className="h-[220px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <LineChart data={dailyConversionData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
@@ -440,7 +513,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                         <span>💰</span> 每日平均客單價趨勢
                     </h3>
                     <div className="h-[220px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <LineChart data={dailyAOVData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
@@ -461,7 +534,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                 <div className="bg-white rounded-3xl p-6 shadow-lg border border-slate-100">
                     <h3 className="font-black text-slate-800 mb-4">🎯 轉化效能分佈</h3>
                     <div className="h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                 <XAxis type="number" dataKey="x" name="派單數" unit="單" tick={{ fill: '#94a3b8' }} />
@@ -493,7 +566,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                 <div className="bg-white rounded-3xl p-6 shadow-lg border border-slate-100">
                     <h3 className="font-black text-slate-800 mb-4">🏆 頂尖戰力排行</h3>
                     <div className="h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <BarChart data={conversionRankData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} stroke="#f1f5f9" />
                                 <XAxis type="number" unit="%" hide />
@@ -517,11 +590,17 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                             <tr>
                                 <th onClick={() => requestSort('name')} className="px-6 py-4 cursor-pointer">姓名</th>
                                 <th onClick={() => requestSort('category')} className="px-6 py-4 cursor-pointer">組別</th>
-                                <th onClick={() => requestSort('todayLeads')} className="px-6 py-4 text-right cursor-pointer">派單</th>
-                                <th onClick={() => requestSort('todaySales')} className="px-6 py-4 text-right cursor-pointer">成交</th>
-                                <th className="px-6 py-4 text-right">成交率</th>
+                                <th onClick={() => requestSort('todayLeads')} className="px-6 py-4 text-right cursor-pointer" title="派單總數">派單</th>
+                                <th onClick={() => requestSort('todaySales')} className="px-6 py-4 text-right cursor-pointer" title="派單成交">派成</th>
+                                <th className="px-6 py-4 text-right" title="派成/派單">成交率</th>
+                                <th onClick={() => requestSort('followupCount')} className="px-6 py-4 text-right cursor-pointer" title="追單數">追單</th>
+                                <th onClick={() => requestSort('renewalCount')} className="px-6 py-4 text-right cursor-pointer" title="續單數">續單</th>
+                                <th onClick={() => requestSort('yishinRevenue')} className="px-6 py-4 text-right cursor-pointer" title="三立奕心業績">奕心</th>
+                                <th onClick={() => requestSort('minshiRevenue')} className="px-6 py-4 text-right cursor-pointer" title="民視商品業績">民視</th>
+                                <th onClick={() => requestSort('companyRevenue')} className="px-6 py-4 text-right cursor-pointer" title="公司商品業績">公司</th>
+                                <th onClick={() => requestSort('giftCount')} className="px-6 py-4 text-right cursor-pointer" title="贈品配發數量">贈品</th>
                                 <th onClick={() => requestSort('todayNetRevenue')} className="px-6 py-4 text-right cursor-pointer">總業績</th>
-                                <th onClick={() => requestSort('avgOrderValue')} className="px-6 py-4 text-right cursor-pointer">客單價</th>
+                                <th onClick={() => requestSort('avgOrderValue')} className="px-6 py-4 text-right cursor-pointer" title="派單平均客單價">派均價</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -538,6 +617,12 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history }) =>
                                         <td className="px-6 py-4 text-right text-slate-600">{emp.todayLeads}</td>
                                         <td className="px-6 py-4 text-right text-slate-600">{emp.todaySales}</td>
                                         <td className="px-6 py-4 text-right font-bold text-emerald-600">{rate.toFixed(1)}%</td>
+                                        <td className="px-6 py-4 text-right text-blue-600 font-bold">{emp.followupCount || 0}</td>
+                                        <td className="px-6 py-4 text-right text-purple-600 font-bold">{emp.renewalCount || 0}</td>
+                                        <td className="px-6 py-4 text-right text-slate-600">${emp.yishinRevenue?.toLocaleString() || 0}</td>
+                                        <td className="px-6 py-4 text-right text-slate-600">${emp.minshiRevenue?.toLocaleString() || 0}</td>
+                                        <td className="px-6 py-4 text-right text-slate-600">${emp.companyRevenue?.toLocaleString() || 0}</td>
+                                        <td className="px-6 py-4 text-right text-slate-400">{emp.giftCount || 0}</td>
                                         <td className="px-6 py-4 text-right font-black text-slate-800">${emp.todayNetRevenue.toLocaleString()}</td>
                                         <td className="px-6 py-4 text-right text-slate-500">${Math.round(emp.avgOrderValue).toLocaleString()}</td>
                                     </tr>

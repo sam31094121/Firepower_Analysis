@@ -24,6 +24,7 @@ import {
   getAllEmployeeProfilesDB
 } from './services/dbService';
 import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from './types';
+import { getIntegratedDashboardData, getIntegratedTrendData } from './services/analyticsService';
 
 type AppArea = 'analysis' | 'input';
 
@@ -91,6 +92,12 @@ const App: React.FC = () => {
   // 離職員工名集合（用於在分析區過濾）
   const [inactiveNames, setInactiveNames] = useState<Set<string>>(new Set());
 
+  // 數據源模式：manual (手動/AI辨識) | integrated (雙軌訂單合併)
+  const [dataSourceMode, setDataSourceMode] = useState<'manual' | 'integrated'>('integrated');
+
+  // 雙軌整合相關的歷史趨勢
+  const [integratedTrendData, setIntegratedTrendData] = useState<any[]>([]);
+
   // 月曆刷新觸發器
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
 
@@ -128,10 +135,21 @@ const App: React.FC = () => {
         .filter((r) => r.dataSource === 'yishin' && r.isAnalyzed && (r.analyzed41DaysData?.length ?? 0) > 0)
         .sort((a, b) => (b.archiveDate || '').localeCompare(a.archiveDate || ''));
       const latest = yishinAnalyzed[0];
-      if (latest) {
-        const raw = (latest.rawData || []).filter(e => !inactiveNames.has(e.name));
-        const analyzed = (latest.analyzed41DaysData || []).filter(e => !inactiveNames.has(e.name));
-        setCurrentArchiveDate(latest.archiveDate || '');
+
+      // 優先載入最新的數據日期
+      const initDate = latest?.archiveDate || new Date().toISOString().split('T')[0];
+      setCurrentArchiveDate(initDate);
+
+      if (dataSourceMode === 'integrated') {
+        const integratedData = await getIntegratedDashboardData(initDate);
+        setEmployees(integratedData);
+        setRawData(integratedData);
+        setCurrentTitle(`${initDate} 雙軌整合數據`);
+        setIsAnalyzed(true);
+        setDataView('raw');
+      } else if (latest) {
+        const raw = (latest.rawData || []).filter(e => !inactiveSet.has(e.name));
+        const analyzed = (latest.analyzed41DaysData || []).filter(e => !inactiveSet.has(e.name));
         setCurrentDataSource('yishin');
         setRawData([...raw]);
         setAnalyzed41DaysData([...analyzed]);
@@ -143,7 +161,28 @@ const App: React.FC = () => {
       await refreshHistory();
     };
     initDisplay();
-  }, []);
+  }, [dataSourceMode]); // 改為僅在模式切換時重新導入口，避免 inactiveNames 造成無限迴圈
+
+  // 當 dataSourceMode 為 integrated 時，抓取趨勢數據
+  useEffect(() => {
+    if (dataSourceMode === 'integrated') {
+      const fetchTrend = async () => {
+        try {
+          const today = new Date();
+          const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+
+          const start = firstDayLastMonth.toISOString().split('T')[0];
+          const end = today.toISOString().split('T')[0];
+
+          const trend = await getIntegratedTrendData(start, end);
+          setIntegratedTrendData(trend);
+        } catch (e) {
+          console.error("Failed to fetch integrated trend:", e);
+        }
+      };
+      fetchTrend();
+    }
+  }, [dataSourceMode]);
 
   // 📥 資料載入（不執行 AI 分析）
   const handleDataLoad = useCallback(async (newData: EmployeeData[]) => {
@@ -279,210 +318,192 @@ const App: React.FC = () => {
       console.log('  - 日期範圍:', startDate, '~', endDate);
       console.log('  - 當前數據源:', currentDataSource);
 
-      // 過濾：1) 有 archiveDate，2) 在日期範圍內，3) 數據源匹配
-      const historicalRecords = allRecords.filter(r => {
-        if (!r.archiveDate) {
-          console.log('  ⚠️ 記錄缺少 archiveDate:', r.title);
-          return false;
+      let aggregatedData: EmployeeData[] = [];
+      let actualRecordsCount = 0;
+
+      if (dataSourceMode === 'integrated') {
+        const { getIntegratedRangeData } = await import('./services/analyticsService');
+        const { getAvailableIntegratedDates } = await import('./services/mergeService');
+
+        // 抓取範圍內的可用日期數量
+        const availableDates = await getAvailableIntegratedDates(baseDate.substring(0, 7));
+        actualRecordsCount = availableDates.filter(d => d >= startDate && d <= endDate).length;
+
+        if (actualRecordsCount === 0) {
+          showToast("AI 分析中（雙軌最新分析）...", "loading");
+        } else {
+          showToast(`AI 分析中（整合 ${actualRecordsCount} 天雙軌數據）...`, "loading");
         }
 
-        // 檢查日期範圍
-        if (r.archiveDate < startDate || r.archiveDate > endDate) {
-          return false;
-        }
-
-        // 檢查數據源匹配
-        if (r.dataSource !== currentDataSource) {
-          return false;
-        }
-
-        return true;
-      });
-
-      // 計算實際有數據的記錄數
-      const actualRecordsCount = historicalRecords.length;
-      console.log('  - 過濾後記錄筆數:', actualRecordsCount);
-      console.log('  - 歷史記錄:', historicalRecords.map(r => `${r.archiveDate} (${r.dataSource})`).join(', '));
-
-      // 顯示提示
-      if (actualRecordsCount === 0) {
-        showToast("AI 分析中（僅使用當日數據）...", "loading");
-      } else if (actualRecordsCount < 10) {
-        showToast(`AI 分析中（已抓取現有資料 ${actualRecordsCount} 筆）...`, "loading");
+        aggregatedData = await getIntegratedRangeData(startDate, endDate);
       } else {
-        showToast(`AI 分析中（整合 ${actualRecordsCount} 筆歷史數據）...`, "loading");
-      }
-
-      // 3. 彙總歷史數據（按員工姓名分組）
-      const employeeMap = new Map<string, any>();
-
-      historicalRecords.forEach((record, index) => {
-        const dataToUse = record.rawData;
-        console.log(`  - 記錄 ${index + 1} (${record.archiveDate}):`, {
-          usingRawData: !!record.rawData,
-          employeeCount: dataToUse.length,
-          firstEmployee: dataToUse[0] ? {
-            name: dataToUse[0].name,
-            todayLeads: dataToUse[0].todayLeads,
-            todaySales: dataToUse[0].todaySales,
-            todayNetRevenue: dataToUse[0].todayNetRevenue
-          } : null
-        });
-
-        dataToUse.forEach((emp: any) => {
-          const existing = employeeMap.get(emp.name);
-          if (!existing) {
-            // 第一次遇到此員工，只保留需要累加的原始數據欄位
-            employeeMap.set(emp.name, {
-              name: emp.name,
-              dayCount: 1,  // 追蹤出現天數
-              todayLeads: emp.todayLeads || 0,
-              todaySales: emp.todaySales || 0,
-              todayNetRevenue: emp.todayNetRevenue || 0,
-              followupCount: emp.followupCount || 0,
-              todayFollowupSales: emp.todayFollowupSales || 0,
-              monthlyTotalLeads: emp.monthlyTotalLeads || 0,
-              monthlyLeadSales: emp.monthlyLeadSales || 0,
-              monthlyFollowupSales: emp.monthlyFollowupSales || 0,
-              todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
-              todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
-              monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
-              monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
-              depositWithdrawal: emp.depositWithdrawal || 0,
-              accumulatedDeposit: emp.accumulatedDeposit || 0,
-              withdrawalFollowup: emp.withdrawalFollowup || 0,
-              followupAmount: emp.followupAmount || 0,
-              returnAmount: emp.returnAmount || 0,
-              monthlyActualRevenue: emp.monthlyActualRevenue || 0,
-              monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
-            });
-          } else {
-            // 累加所有原始數據欄位
-            existing.dayCount += 1;
-            existing.todayLeads += emp.todayLeads || 0;
-            existing.todaySales += emp.todaySales || 0;
-            existing.todayNetRevenue += emp.todayNetRevenue || 0;
-            existing.followupCount += emp.followupCount || 0;
-            existing.todayFollowupSales += emp.todayFollowupSales || 0;
-            existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
-            existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
-            existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
-            existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
-            existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
-            existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
-            existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
-            existing.depositWithdrawal += emp.depositWithdrawal || 0;
-            existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
-            existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
-            existing.followupAmount += emp.followupAmount || 0;
-            existing.returnAmount += emp.returnAmount || 0;
-            existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
-            existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+        // 過濾：1) 有 archiveDate，2) 在日期範圍內，3) 數據源匹配
+        const historicalRecords = allRecords.filter(r => {
+          if (!r.archiveDate) {
+            console.log('  ⚠️ 記錄缺少 archiveDate:', r.title);
+            return false;
           }
-        });
-      });
 
-      // 3.2 加入當日數據（如果不在歷史記錄中）
-      console.log('  - 加入當日數據...');
-
-      // 檢查當日數據是否已經在歷史記錄中
-      const currentArchiveDateInHistory = historicalRecords.some(r => r.archiveDate === currentArchiveDate);
-
-      if (currentArchiveDateInHistory) {
-        console.log('  ⚠️ 當日數據已在歷史記錄中，跳過累加');
-      } else {
-        console.log('  ✅ 當日數據不在歷史記錄中，開始累加');
-        currentData.forEach((emp: any) => {
-          const existing = employeeMap.get(emp.name);
-
-          if (!existing) {
-            // 當日新員工，直接加入
-            employeeMap.set(emp.name, {
-              name: emp.name,
-              dayCount: 1,
-              todayLeads: emp.todayLeads || 0,
-              todaySales: emp.todaySales || 0,
-              todayNetRevenue: emp.todayNetRevenue || 0,
-              followupCount: emp.followupCount || 0,
-              todayFollowupSales: emp.todayFollowupSales || 0,
-              monthlyTotalLeads: emp.monthlyTotalLeads || 0,
-              monthlyLeadSales: emp.monthlyLeadSales || 0,
-              monthlyFollowupSales: emp.monthlyFollowupSales || 0,
-              todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
-              todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
-              monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
-              monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
-              depositWithdrawal: emp.depositWithdrawal || 0,
-              accumulatedDeposit: emp.accumulatedDeposit || 0,
-              withdrawalFollowup: emp.withdrawalFollowup || 0,
-              followupAmount: emp.followupAmount || 0,
-              returnAmount: emp.returnAmount || 0,
-              monthlyActualRevenue: emp.monthlyActualRevenue || 0,
-              monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
-            });
-          } else {
-            // 累加當日數據
-            existing.dayCount += 1;
-            existing.todayLeads += emp.todayLeads || 0;
-            existing.todaySales += emp.todaySales || 0;
-            existing.todayNetRevenue += emp.todayNetRevenue || 0;
-            existing.followupCount += emp.followupCount || 0;
-            existing.todayFollowupSales += emp.todayFollowupSales || 0;
-            existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
-            existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
-            existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
-            existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
-            existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
-            existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
-            existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
-            existing.depositWithdrawal += emp.depositWithdrawal || 0;
-            existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
-            existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
-            existing.followupAmount += emp.followupAmount || 0;
-            existing.returnAmount += emp.returnAmount || 0;
-            existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
-            existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+          // 檢查日期範圍
+          if (r.archiveDate < startDate || r.archiveDate > endDate) {
+            return false;
           }
+
+          // 檢查數據源匹配
+          if (r.dataSource !== currentDataSource) {
+            return false;
+          }
+
+          return true;
         });
-      }
 
-      // 4. 重新計算衍生欄位（派單價值、成交率）
-      const aggregatedData = Array.from(employeeMap.values()).map(emp => {
-        // 計算成交率: 累加後的 todaySales/todayLeads，上限 100%
-        const rawConvRate = emp.todayLeads > 0
-          ? (emp.todaySales / emp.todayLeads) * 100
-          : 0;
-        const convRate = Math.min(rawConvRate, 100).toFixed(1); // cap 100%
+        actualRecordsCount = historicalRecords.length;
+        console.log('  - 過濾後記錄筆數:', actualRecordsCount);
+        console.log('  - 歷史記錄:', historicalRecords.map(r => `${r.archiveDate} (${r.dataSource})`).join(', '));
 
-        // 計算派單價值 (總業績 ÷ 總派單數)
-        const avgOrderValue = emp.todayLeads > 0
-          ? Math.round(emp.todayNetRevenue / emp.todayLeads)
-          : 0;
+        // 顯示提示
+        if (actualRecordsCount === 0) {
+          showToast("AI 分析中（僅使用當日數據）...", "loading");
+        } else if (actualRecordsCount < 10) {
+          showToast(`AI 分析中（已抓取現有資料 ${actualRecordsCount} 筆）...`, "loading");
+        } else {
+          showToast(`AI 分析中（整合 ${actualRecordsCount} 筆歷史數據）...`, "loading");
+        }
 
-        return {
-          ...emp,
-          todayConvRate: `${convRate}%`,
-          avgOrderValue: avgOrderValue,
-          id: `agg-${emp.name}-${Date.now()}`,
-          // 初始化排名欄位（稍後會計算）
-          revenueRank: '-',
-          followupRank: '-',
-          avgPriceRank: '-',
-          // 清空 AI 分析欄位（等待 AI 計算）
-          category: undefined,
-          categoryRank: undefined,
-          aiAdvice: undefined,
-          scoutAdvice: undefined
-        };
-      });
+        // 3. 彙總歷史數據（按員工姓名分組）
+        const employeeMap = new Map<string, any>();
 
-      console.log('  - 彙總後員工數:', aggregatedData.length);
+        historicalRecords.forEach((record, index) => {
+          const dataToUse = record.rawData;
+          console.log(`  - 記錄 ${index + 1} (${record.archiveDate}):`, {
+            usingRawData: !!record.rawData,
+            employeeCount: dataToUse.length,
+            firstEmployee: dataToUse[0] ? {
+              name: dataToUse[0].name,
+              todayLeads: dataToUse[0].todayLeads,
+              todaySales: dataToUse[0].todaySales,
+              todayNetRevenue: dataToUse[0].todayNetRevenue
+            } : null
+          });
 
-      // 檢查是否有數據可供分析
-      if (aggregatedData.length === 0) {
-        showToast("無法彙總數據,請確認資料庫中有歷史記錄", "error");
-        setIsAnalyzing(false);
-        return;
+          dataToUse.forEach((emp: any) => {
+            const existing = employeeMap.get(emp.name);
+            if (!existing) {
+              // 第一次遇到此員工，只保留需要累加的原始數據欄位
+              employeeMap.set(emp.name, {
+                name: emp.name,
+                dayCount: 1,  // 追蹤出現天數
+                todayLeads: emp.todayLeads || 0,
+                todaySales: emp.todaySales || 0,
+                todayNetRevenue: emp.todayNetRevenue || 0,
+                followupCount: emp.followupCount || 0,
+                todayFollowupSales: emp.todayFollowupSales || 0,
+                monthlyTotalLeads: emp.monthlyTotalLeads || 0,
+                monthlyLeadSales: emp.monthlyLeadSales || 0,
+                monthlyFollowupSales: emp.monthlyFollowupSales || 0,
+                todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
+                todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
+                monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
+                monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
+                depositWithdrawal: emp.depositWithdrawal || 0,
+                accumulatedDeposit: emp.accumulatedDeposit || 0,
+                withdrawalFollowup: emp.withdrawalFollowup || 0,
+                followupAmount: emp.followupAmount || 0,
+                returnAmount: emp.returnAmount || 0,
+                monthlyActualRevenue: emp.monthlyActualRevenue || 0,
+                monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
+              });
+            } else {
+              // 累加所有原始數據欄位
+              existing.dayCount += 1;
+              existing.todayLeads += emp.todayLeads || 0;
+              existing.todaySales += emp.todaySales || 0;
+              existing.todayNetRevenue += emp.todayNetRevenue || 0;
+              existing.followupCount += emp.followupCount || 0;
+              existing.todayFollowupSales += emp.todayFollowupSales || 0;
+              existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
+              existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
+              existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
+              existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
+              existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
+              existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
+              existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
+              existing.depositWithdrawal += emp.depositWithdrawal || 0;
+              existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
+              existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
+              existing.followupAmount += emp.followupAmount || 0;
+              existing.returnAmount += emp.returnAmount || 0;
+              existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
+              existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+            }
+          });
+        });
+
+        // 3.2 加入當日數據（如果不在歷史記錄中）
+        console.log('  - 加入當日數據...');
+
+        // 檢查當日數據是否已經在歷史記錄中
+        const currentArchiveDateInHistory = historicalRecords.some(r => r.archiveDate === currentArchiveDate);
+
+        if (currentArchiveDateInHistory) {
+          console.log('  ⚠️ 當日數據已在歷史記錄中，跳過累加');
+        } else {
+          console.log('  ✅ 當日數據不在歷史記錄中，開始累加');
+          currentData.forEach((emp: any) => {
+            const existing = employeeMap.get(emp.name);
+
+            if (!existing) {
+              // 當日新員工，直接加入
+              employeeMap.set(emp.name, {
+                name: emp.name,
+                dayCount: 1,
+                todayLeads: emp.todayLeads || 0,
+                todaySales: emp.todaySales || 0,
+                todayNetRevenue: emp.todayNetRevenue || 0,
+                followupCount: emp.followupCount || 0,
+                todayFollowupSales: emp.todayFollowupSales || 0,
+                monthlyTotalLeads: emp.monthlyTotalLeads || 0,
+                monthlyLeadSales: emp.monthlyLeadSales || 0,
+                monthlyFollowupSales: emp.monthlyFollowupSales || 0,
+                todayVirtualLeadPaid: emp.todayVirtualLeadPaid || 0,
+                todayVirtualFollowupPaid: emp.todayVirtualFollowupPaid || 0,
+                monthlyVirtualLeadDeposit: emp.monthlyVirtualLeadDeposit || 0,
+                monthlyVirtualFollowupDeposit: emp.monthlyVirtualFollowupDeposit || 0,
+                depositWithdrawal: emp.depositWithdrawal || 0,
+                accumulatedDeposit: emp.accumulatedDeposit || 0,
+                withdrawalFollowup: emp.withdrawalFollowup || 0,
+                followupAmount: emp.followupAmount || 0,
+                returnAmount: emp.returnAmount || 0,
+                monthlyActualRevenue: emp.monthlyActualRevenue || 0,
+                monthlyActualRevenueNet: emp.monthlyActualRevenueNet || 0
+              });
+            } else {
+              // 累加當日數據
+              existing.dayCount += 1;
+              existing.todayLeads += emp.todayLeads || 0;
+              existing.todaySales += emp.todaySales || 0;
+              existing.todayNetRevenue += emp.todayNetRevenue || 0;
+              existing.followupCount += emp.followupCount || 0;
+              existing.todayFollowupSales += emp.todayFollowupSales || 0;
+              existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
+              existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
+              existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
+              existing.todayVirtualLeadPaid += emp.todayVirtualLeadPaid || 0;
+              existing.todayVirtualFollowupPaid += emp.todayVirtualFollowupPaid || 0;
+              existing.monthlyVirtualLeadDeposit += emp.monthlyVirtualLeadDeposit || 0;
+              existing.monthlyVirtualFollowupDeposit += emp.monthlyVirtualFollowupDeposit || 0;
+              existing.depositWithdrawal += emp.depositWithdrawal || 0;
+              existing.accumulatedDeposit += emp.accumulatedDeposit || 0;
+              existing.withdrawalFollowup += emp.withdrawalFollowup || 0;
+              existing.followupAmount += emp.followupAmount || 0;
+              existing.returnAmount += emp.returnAmount || 0;
+              existing.monthlyActualRevenue += emp.monthlyActualRevenue || 0;
+              existing.monthlyActualRevenueNet += emp.monthlyActualRevenueNet || 0;
+            }
+          });
+        }
+
+        aggregatedData = Array.from(employeeMap.values());
       }
 
       // 4.5 自動計算排名（使用 calculateRankings）
@@ -504,12 +525,13 @@ const App: React.FC = () => {
 
       setEmployees(analyzedData);
 
-      // 6. 更新記錄（標記已分析）
+      // 決定 title 和儲存的 dataSource
       const archiveDate = currentArchiveDate || new Date().toISOString().split('T')[0];
-      const dataSourceLabel = currentDataSource === 'minshi' ? '民視表' : currentDataSource === 'yishin' ? '奕心表' : '總和表';
+      const dataSourceToSave = dataSourceMode === 'integrated' ? 'integrated' : currentDataSource;
+      const dataSourceLabel = dataSourceToSave === 'minshi' ? '民視表' : dataSourceToSave === 'yishin' ? '奕心表' : dataSourceToSave === 'integrated' ? '雙軌整合數據' : '總和表';
       const title = `${archiveDate} ${dataSourceLabel}`;
 
-      const existingRecord = await getRecordByDateDB(archiveDate, currentDataSource);
+      const existingRecord = await getRecordByDateDB(archiveDate, dataSourceToSave);
 
       // 保留原始數據：優先使用 Firestore 的 existingRecord.rawData（匯入時已正確存檔），
       // 其次使用 state rawData，最後才用 currentData
@@ -531,7 +553,7 @@ const App: React.FC = () => {
         title: title,
         date: new Date().toLocaleString(),
         archiveDate: archiveDate,
-        dataSource: currentDataSource,
+        dataSource: dataSourceToSave,
         rawData: JSON.parse(JSON.stringify(preservedRawData)),  // 保留原始數據
         analyzed41DaysData: JSON.parse(JSON.stringify(analyzedData)),  // 41天分析結果
 
@@ -541,7 +563,7 @@ const App: React.FC = () => {
           endDate: endDate,
           actualRecordCount: actualRecordsCount,
           expectedDays: 41,
-          dataSource: currentDataSource
+          dataSource: dataSourceToSave
         },
 
         isAnalyzed: true,
@@ -571,7 +593,7 @@ const App: React.FC = () => {
               actualRecordCount: actualRecordsCount
             },
 
-            source: currentDataSource,
+            source: dataSourceToSave,
             createdAt: new Date().toISOString()
           };
           await saveEmployeeDailyRecordDB(dailyRecord);
@@ -599,7 +621,7 @@ const App: React.FC = () => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [employees, rawData, dataView, showToast, currentArchiveDate, currentDataSource]);
+  }, [employees, rawData, dataView, showToast, currentArchiveDate, currentDataSource, dataSourceMode]);
 
   const saveToHistory = async () => {
     if (employees.length === 0 || isSaving) return;
@@ -674,13 +696,34 @@ const App: React.FC = () => {
   const handleDateSelect = async (date: string, dataSource: 'minshi' | 'yishin' | 'combined') => {
     setCurrentArchiveDate(date);
     setCurrentDataSource(dataSource);
-    const record = await getRecordByDateDB(date, dataSource); // 傳入 dataSource
-    if (record) {
-      loadRecord(record);
+
+    if (dataSourceMode === 'integrated') {
+      showToast(`正在從雙軌系統載入 ${date}...`, 'loading');
+
+      // 嘗試讀取是否有已儲存的 41 天分析結果 (dataSource === 'integrated')
+      const record = await getRecordByDateDB(date, 'integrated');
+      if (record && record.isAnalyzed && record.analyzed41DaysData) {
+        loadRecord(record);
+        showToast(`${date} 分析讀取完成`);
+      } else {
+        // 如果沒有存檔過，載入最新的即時彙總數據
+        const integratedData = await getIntegratedDashboardData(date);
+        setEmployees(integratedData);
+        setRawData(integratedData);
+        setCurrentTitle(`${date} 雙軌整合數據`);
+        setIsAnalyzed(false); // 標記尚未經過 41 天分析
+        setDataView('raw');
+        showToast(`${date} 整合數據載入完成`);
+      }
     } else {
-      setEmployees([]);
-      setCurrentTitle(`${date} (${dataSource === 'minshi' ? '民視表' : dataSource === 'yishin' ? '奕心表' : '總和表'}) - 無數據`);
-      showToast(`${date} 無數據，可上傳新數據`, 'error');
+      const record = await getRecordByDateDB(date, dataSource);
+      if (record) {
+        loadRecord(record);
+      } else {
+        setEmployees([]);
+        setCurrentTitle(`${date} (${dataSource === 'minshi' ? '民視表' : dataSource === 'yishin' ? '奕心表' : '總和表'}) - 無數據`);
+        showToast(`${date} 無數據，可上傳新數據`, 'error');
+      }
     }
   };
 
@@ -772,76 +815,99 @@ const App: React.FC = () => {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
 
-            {/* 🔔 通知鈴鐺 */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowNotifications(v => {
-                    if (!v) markAllRead(); // 打開時標記全讀
-                    return !v;
-                  });
-                }}
-                className="relative w-9 h-9 bg-white/10 hover:bg-white/20 rounded-xl flex items-center justify-center transition-all"
-              >
-                <span className="text-xl">🔔</span>
-                {/* 未讀紅點 */}
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
+          <div className="flex items-center gap-6">
+            {/* 數據源切換器 (DataSourceSwitcher) */}
+            {(activeArea === 'analysis' || activeArea === 'executive') && (
+              <div className="flex bg-white/10 rounded-xl p-1 border border-white/10 backdrop-blur-md">
+                <button
+                  onClick={() => setDataSourceMode('manual')}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-black tracking-tighter transition-all flex items-center gap-1.5 ${dataSourceMode === 'manual' ? 'bg-white text-blue-600 shadow-lg transform scale-[1.02]' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+                >
+                  <span>📝 舊式手動</span>
+                  {dataSourceMode === 'manual' && <div className="w-1 h-1 bg-blue-600 rounded-full animate-pulse" />}
+                </button>
+                <button
+                  onClick={() => setDataSourceMode('integrated')}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-black tracking-tighter transition-all flex items-center gap-1.5 ${dataSourceMode === 'integrated' ? 'bg-white text-indigo-600 shadow-lg transform scale-[1.02]' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+                >
+                  <span>⚡ 雙軌整合</span>
+                  {dataSourceMode === 'integrated' && <div className="w-1 h-1 bg-indigo-600 rounded-full animate-pulse" />}
+                </button>
+              </div>
+            )}
 
-              {/* 通知 Dropdown */}
-              {showNotifications && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+            <div className="flex items-center gap-3">
 
-                    {/* 標頭 */}
-                    <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-between">
-                      <div>
-                        <div className="text-white font-black text-sm">🔔 新功能教學</div>
-                        <div className="text-blue-200 text-[10px] mt-0.5">Dashboard v4.0 更新說明</div>
+              {/* 🔔 通知鈴鐺 */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowNotifications(v => {
+                      if (!v) markAllRead(); // 打開時標記全讀
+                      return !v;
+                    });
+                  }}
+                  className="relative w-9 h-9 bg-white/10 hover:bg-white/20 rounded-xl flex items-center justify-center transition-all"
+                >
+                  <span className="text-xl">🔔</span>
+                  {/* 未讀紅點 */}
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* 通知 Dropdown */}
+                {showNotifications && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+
+                      {/* 標頭 */}
+                      <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-between">
+                        <div>
+                          <div className="text-white font-black text-sm">🔔 新功能教學</div>
+                          <div className="text-blue-200 text-[10px] mt-0.5">Dashboard v4.0 更新說明</div>
+                        </div>
+                        <button
+                          onClick={() => setShowNotifications(false)}
+                          className="text-white/60 hover:text-white text-lg leading-none"
+                        >✕</button>
                       </div>
-                      <button
-                        onClick={() => setShowNotifications(false)}
-                        className="text-white/60 hover:text-white text-lg leading-none"
-                      >✕</button>
-                    </div>
 
-                    {/* 通知清單 */}
-                    <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
-                      {NOTIFICATIONS.map(n => {
-                        const isRead = readIds.includes(n.id);
-                        return (
-                          <div key={n.id} className={`px-4 py-3 ${isRead ? 'bg-white' : 'bg-blue-50'}`}>
-                            <div className="flex items-start gap-3">
-                              <span className="text-2xl shrink-0 mt-0.5">{n.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-slate-800 text-[13px] font-black">{n.title}</span>
-                                  {!isRead && (
-                                    <span className="shrink-0 text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">NEW</span>
-                                  )}
+                      {/* 通知清單 */}
+                      <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
+                        {NOTIFICATIONS.map(n => {
+                          const isRead = readIds.includes(n.id);
+                          return (
+                            <div key={n.id} className={`px-4 py-3 ${isRead ? 'bg-white' : 'bg-blue-50'}`}>
+                              <div className="flex items-start gap-3">
+                                <span className="text-2xl shrink-0 mt-0.5">{n.icon}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-slate-800 text-[13px] font-black">{n.title}</span>
+                                    {!isRead && (
+                                      <span className="shrink-0 text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">NEW</span>
+                                    )}
+                                  </div>
+                                  <p className="text-slate-500 text-xs leading-relaxed">{n.body}</p>
                                 </div>
-                                <p className="text-slate-500 text-xs leading-relaxed">{n.body}</p>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
 
-                    {/* 底部提示 */}
-                    <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 text-center">
-                      點擊鈴鐺即標記全讀
+                      {/* 底部提示 */}
+                      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 text-center">
+                        點擊鈴鐺即標記全讀
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             {activeArea === 'input' && <ApiDiagnostics />}
@@ -867,11 +933,25 @@ const App: React.FC = () => {
                   </button>
                 </>
               )}
-              <CalendarCard onDateSelect={handleDateSelect} refreshTrigger={calendarRefreshTrigger} defaultDataSource={currentDataSource} selectedDateFromParent={currentArchiveDate || null} />
+              <CalendarCard
+                history={history}
+                onDateSelect={handleDateSelect}
+                refreshTrigger={calendarRefreshTrigger}
+                defaultDataSource={currentDataSource}
+                selectedDateFromParent={currentArchiveDate || null}
+                dataSourceMode={dataSourceMode}
+                onModeChange={setDataSourceMode}
+              />
 
               {/* 戰略決策看板 - 嵌入式 (Compact Mode) */}
               {activeArea === 'analysis' && history.length > 0 && (
-                <ExecutiveDashboard history={history} currentEmployees={employees} compact={true} />
+                <ExecutiveDashboard
+                  history={history}
+                  currentEmployees={employees}
+                  compact={true}
+                  dataSourceMode={dataSourceMode}
+                  integratedTrend={integratedTrendData}
+                />
               )}
 
               {activeArea === 'input' && (
@@ -996,12 +1076,15 @@ const App: React.FC = () => {
                   <Dashboard
                     employees={employees}
                     onRefresh={refreshHistory}
-                    history={history}
+                    history={history.filter(r => r.dataSource === (dataSourceMode === 'integrated' ? 'integrated' : currentDataSource))}
+                    dataSourceMode={dataSourceMode}
                   />
                 ) : (
                   <OperationalDashboard
                     currentEmployees={employees}
-                    history={history}
+                    history={history.filter(r => r.dataSource === (dataSourceMode === 'integrated' ? 'integrated' : currentDataSource))}
+                    dataSourceMode={dataSourceMode}
+                    integratedTrend={integratedTrendData}
                   />
                 )
               ) : (
@@ -1009,7 +1092,7 @@ const App: React.FC = () => {
                 <Dashboard
                   employees={employees}
                   onRefresh={refreshHistory}
-                  history={history}
+                  history={history.filter(r => r.dataSource === (dataSourceMode === 'integrated' ? 'integrated' : currentDataSource))}
                 />
               )
             ) : (

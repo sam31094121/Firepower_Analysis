@@ -18,19 +18,29 @@ interface Props {
     history: HistoryRecord[];
     currentEmployees: EmployeeData[];
     compact?: boolean;
+    dataSourceMode?: 'manual' | 'integrated';
+    integratedTrend?: any[];
 }
 
-const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compact = false }) => {
+const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compact = false, dataSourceMode = 'manual', integratedTrend = [] }) => {
 
     // 1. 營收趨勢數據 (Revenue Trend)
     // 修正邏輯：強制使用 rawData 的總和，避免混入 41 天分析數據
     const revenueTrendData = useMemo(() => {
+        if (dataSourceMode === 'integrated' && integratedTrend && integratedTrend.length > 0) {
+            return integratedTrend.slice(-10).map(t => ({
+                date: t.date,
+                revenue: t.revenue,
+                name: t.date
+            }));
+        }
+
         return history
             .filter(h => h.archiveDate)
             .sort((a, b) => (a.archiveDate!).localeCompare(b.archiveDate!))
             .slice(-10)
             .map(h => {
-                // 如果有 rawData，重新計算當日總營收；否則退回到 totalRevenue (但這可能有險)
+                // 如果有 rawData，重新計算當日總營收；否則退回到 totalRevenue
                 const dailyRevenue = h.rawData && h.rawData.length > 0
                     ? h.rawData.reduce((sum, emp) => sum + emp.todayNetRevenue, 0)
                     : h.totalRevenue;
@@ -42,7 +52,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
                 };
             })
             .filter(d => d.revenue > 0);
-    }, [history]);
+    }, [history, dataSourceMode, integratedTrend]);
 
     // 2. 人員戰力分佈 (Category Distribution)
     const categoryDistribution = useMemo(() => {
@@ -279,11 +289,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
 
                 {/* 營收歷史趨勢 */}
                 <div className={`${compact ? 'col-span-1 p-3' : 'lg:col-span-2 p-6'} bg-white rounded-xl shadow-lg border border-slate-200`}>
-                    <div className="mb-2">
+                    <div className="mb-2 flex items-center justify-between">
                         <h3 className="text-slate-900 text-xs font-black tracking-tight">營收走勢</h3>
+                        {dataSourceMode === 'integrated' && (
+                            <span className="text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-bold shadow-sm">
+                                {integratedTrend.length > 0 ? '⚡ 整合模式' : '⚠️ 暫用歷史數據'}
+                            </span>
+                        )}
                     </div>
                     <div className={`${compact ? 'h-[100px]' : 'h-[300px]'} w-full`}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <AreaChart data={revenueTrendData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -327,7 +342,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ history, currentEmployees, compac
                         <h3 className="text-slate-900 text-xs font-black tracking-tight">戰力結構</h3>
                     </div>
                     <div className={`flex-1 relative ${compact ? 'min-h-[120px]' : 'min-h-[250px]'}`}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="99%" height="100%" minWidth={1}>
                             <PieChart>
                                 <Pie
                                     data={categoryDistribution}

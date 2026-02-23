@@ -84,7 +84,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
         }
 
         const total = filteredRecords.reduce((acc, r) => {
-            const convRate = parseFloat((r.rawData.todayConvRate || '0').replace('%', '')) || 0;
+            const convRate = parseFloat(String(r.rawData.todayConvRate || '0').replace('%', '')) || 0;
             return {
                 convRate: acc.convRate + convRate,
                 orderValue: acc.orderValue + (r.rawData.avgOrderValue || 0),
@@ -107,7 +107,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
     const chartData = useMemo(() => {
         return filteredRecords.map(r => ({
             date: r.date.substring(5), // MM-DD
-            convRate: parseFloat((r.rawData.todayConvRate || '0').replace('%', '')) || 0,
+            convRate: parseFloat(String(r.rawData.todayConvRate || '0').replace('%', '')) || 0,
             revenue: r.rawData.todayNetRevenue || 0,
             aov: r.rawData.avgOrderValue || 0
         })).reverse();
@@ -145,7 +145,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                     <div>
                         <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
                             <span className="text-3xl">👤</span>
-                            {profile.name}
+                            {profile.displayName || profile.name}
                             <span className={`text-sm font-bold px-3 py-1 rounded-full ${profile.status === 'active'
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-rose-100 text-rose-700'
@@ -248,6 +248,12 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派單</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派成</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">成交率</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">追單</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">續單</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">奕心</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">民視</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">公司</th>
+                                        <th className="px-4 py-2 text-right font-black text-slate-700">贈品</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派單價值</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">總業績</th>
                                     </tr>
@@ -259,13 +265,19 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                             <td className="px-4 py-2 text-right">{record.rawData?.todayLeads ?? 0}</td>
                                             <td className="px-4 py-2 text-right text-blue-600 font-bold">{record.rawData?.todaySales ?? 0}</td>
                                             <td className="px-4 py-2 text-right text-green-600 font-bold">{record.rawData?.todayConvRate ?? '0%'}</td>
+                                            <td className="px-4 py-2 text-right text-indigo-600 font-bold">{record.rawData?.followupCount ?? 0}</td>
+                                            <td className="px-4 py-2 text-right text-purple-600 font-bold">{record.rawData?.renewalCount ?? 0}</td>
+                                            <td className="px-4 py-2 text-right text-slate-600">${(record.rawData?.yishinRevenue ?? 0).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-right text-slate-600">${(record.rawData?.minshiRevenue ?? 0).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-right text-slate-600">${(record.rawData?.companyRevenue ?? 0).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-right text-slate-400">{record.rawData?.giftCount ?? 0}</td>
                                             <td className="px-4 py-2 text-right">${(record.rawData?.avgOrderValue ?? 0).toLocaleString()}</td>
                                             <td className="px-4 py-2 text-right font-black">${(record.rawData?.todayNetRevenue ?? 0).toLocaleString()}</td>
                                         </tr>
                                     ))}
                                     {filteredRecords.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                                            <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
                                                 該期間沒有數據
                                             </td>
                                         </tr>
@@ -280,6 +292,18 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                         <h3 className="text-lg font-black text-slate-800 mb-4">管理設定</h3>
 
                         <div className="space-y-4">
+                            {/* 顯示名稱 */}
+                            <div>
+                                <label className="text-sm font-bold text-slate-700 mb-2 block">自訂顯示名稱 (選填，報表將優先顯示此名稱)</label>
+                                <input
+                                    type="text"
+                                    value={profile.displayName || ''}
+                                    onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
+                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                                    placeholder="例如：珍珠"
+                                />
+                            </div>
+
                             {/* 狀態管理 */}
                             <div>
                                 <label className="text-sm font-bold text-slate-700 mb-2 block">員工狀態</label>
