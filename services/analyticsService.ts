@@ -36,7 +36,7 @@ export function mapDailyStatsToEmployees(stats: DailyStat[]): EmployeeData[] {
             revenueRank: '0',
             followupRank: '0',
             avgPriceRank: '0',
-            todayConvRate: calculateConversionRate(s.totalDispatches, s.totalSales),
+            todayConvRate: calculateConversionRate(s.totalDispatches, s.dispatchSales),
             category: category,
             // 擴充欄位初始化
             monthlyTotalLeads: 0,
@@ -99,19 +99,19 @@ export async function getIntegratedRangeData(startDate: string, endDate: string)
             });
         }
         const target = empMap.get(s.empId)!;
-        target.totalDispatches += s.totalDispatches;
-        target.totalSales += s.totalSales;
-        target.dispatchSales += s.dispatchSales;
-        target.followupSales += s.followupSales;
-        target.renewalSales += s.renewalSales;
-        target.followupRevenue += s.followupRevenue;
-        target.renewalRevenue += s.renewalRevenue;
-        target.yishinRevenue += s.yishinRevenue;
-        target.minshiRevenue += s.minshiRevenue;
-        target.companyRevenue += s.companyRevenue;
-        target.otherRevenue += s.otherRevenue;
-        target.giftCount += s.giftCount;
-        target.totalRevenue += s.totalRevenue;
+        target.totalDispatches += s.totalDispatches || 0;
+        target.totalSales += s.totalSales || 0;
+        target.dispatchSales += s.dispatchSales || Math.max((s.totalSales || 0) - (s.followupSales || 0) - (s.renewalSales || 0), 0);
+        target.followupSales += s.followupSales || 0;
+        target.renewalSales += s.renewalSales || 0;
+        target.followupRevenue += s.followupRevenue || 0;
+        target.renewalRevenue += s.renewalRevenue || 0;
+        target.yishinRevenue += s.yishinRevenue || 0;
+        target.minshiRevenue += s.minshiRevenue || 0;
+        target.companyRevenue += s.companyRevenue || 0;
+        target.otherRevenue += s.otherRevenue || 0;
+        target.giftCount += s.giftCount || 0;
+        target.totalRevenue += s.totalRevenue || 0;
     });
 
     const aggregatedStats = Array.from(empMap.values()).map(s => ({
@@ -130,16 +130,35 @@ export async function getIntegratedRangeData(startDate: string, endDate: string)
 export async function getIntegratedTrendData(startDate: string, endDate: string) {
     const stats = await getDailyStats(startDate, endDate);
 
-    const dayMap = new Map<string, { date: string, revenue: number, sales: number, leads: number }>();
+    const dayMap = new Map<string, {
+        date: string,
+        revenue: number,
+        sales: number,
+        leads: number,
+        dispatchSales: number,
+        followupRevenue: number,
+        renewalRevenue: number
+    }>();
 
     stats.forEach(s => {
         if (!dayMap.has(s.date)) {
-            dayMap.set(s.date, { date: s.date, revenue: 0, sales: 0, leads: 0 });
+            dayMap.set(s.date, {
+                date: s.date,
+                revenue: 0,
+                sales: 0,
+                leads: 0,
+                dispatchSales: 0,
+                followupRevenue: 0,
+                renewalRevenue: 0
+            });
         }
         const day = dayMap.get(s.date)!;
-        day.revenue += s.totalRevenue;
-        day.sales += s.totalSales;
-        day.leads += s.totalDispatches;
+        day.revenue += s.totalRevenue || 0;
+        day.sales += s.totalSales || 0;
+        day.leads += s.totalDispatches || 0;
+        day.dispatchSales += s.dispatchSales || Math.max((s.totalSales || 0) - (s.followupSales || 0) - (s.renewalSales || 0), 0);
+        day.followupRevenue += s.followupRevenue || 0;
+        day.renewalRevenue += s.renewalRevenue || 0;
     });
 
     return Array.from(dayMap.values())
@@ -149,7 +168,7 @@ export async function getIntegratedTrendData(startDate: string, endDate: string)
             revenue: d.revenue,
             sales: d.sales,
             leads: d.leads,
-            rate: d.leads > 0 ? Number(((d.sales / d.leads) * 100).toFixed(1)) : 0,
-            avgOrderValue: d.sales > 0 ? Math.round(d.revenue / d.sales) : 0
+            rate: d.leads > 0 ? Number(Math.min((d.dispatchSales / d.leads) * 100, 100).toFixed(1)) : 0,
+            avgOrderValue: d.dispatchSales > 0 ? Math.round((d.revenue - d.followupRevenue - d.renewalRevenue) / d.dispatchSales) : 0
         }));
 }

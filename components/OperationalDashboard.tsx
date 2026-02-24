@@ -605,7 +605,7 @@ const OperationalDashboard: React.FC<Props> = ({ currentEmployees, history, data
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {sortedEmployees.map(emp => {
-                                const rate = emp.todayLeads > 0 ? (emp.todaySales / emp.todayLeads) * 100 : 0;
+                                const rate = emp.todayLeads > 0 ? Math.min((emp.todaySales / emp.todayLeads) * 100, 100) : 0;
                                 return (
                                     <tr key={emp.id} className="hover:bg-blue-50/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-slate-700">{emp.name}</td>

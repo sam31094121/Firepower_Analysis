@@ -36,12 +36,19 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
   }, []);
 
   // 準備圖表數據
-  const chartData = employees.map(emp => ({
-    id: emp.id,
-    name: emp.name,
-    aov: emp.avgOrderValue || 0,
-    convRate: parseFloat(String(emp.todayConvRate || '0%').replace('%', '')) || 0
-  })).sort((a, b) => b.aov - a.aov);
+  const chartData = employees.map(emp => {
+    // 修復舊數據快取問題：動態重新計算正確的成交率，不再依賴字串
+    const calculatedRate = emp.todayLeads > 0
+      ? Math.min((emp.todaySales / emp.todayLeads) * 100, 100)
+      : 0;
+
+    return {
+      id: emp.id,
+      name: emp.name,
+      aov: emp.avgOrderValue || 0,
+      convRate: calculatedRate
+    };
+  }).sort((a, b) => b.aov - a.aov);
 
   // 滾動到特定人員的邏輯
   const scrollToEmployee = (id: string) => {

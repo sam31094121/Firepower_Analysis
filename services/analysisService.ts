@@ -54,7 +54,7 @@ export const aggregate41DaysData = async (): Promise<EmployeeData[]> => {
     // 計算平均值與成交率
     return Array.from(employeeMap.values()).map(emp => {
         const convRate = emp.todayLeads > 0
-            ? ((emp.todaySales / emp.todayLeads) * 100).toFixed(1)
+            ? Math.min((emp.todaySales / emp.todayLeads) * 100, 100).toFixed(1)
             : '0.0';
 
         const avgOrderValue = emp.todayLeads > 0

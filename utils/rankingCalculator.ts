@@ -50,7 +50,7 @@ export function calculateConversionRate(todayLeads: number, todaySales: number):
     if (todayLeads === 0) {
         return '0.0%';
     }
-    const rate = ((todaySales / todayLeads) * 100).toFixed(1);
+    const rate = Math.min((todaySales / todayLeads) * 100, 100).toFixed(1);
     return `${rate}%`;
 }
 

@@ -667,10 +667,16 @@ const App: React.FC = () => {
     console.log('  - 總業績:', record.rawData?.reduce((s, e) => s + (e.todayNetRevenue || 0), 0));
     console.log('  - 當前 dataView:', dataView);
 
-    // 載入雙視角數據（過濾離職員工）
-    const raw = (record.rawData || []).filter(e => !inactiveNames.has(e.name));
+    // 載入雙視角數據（過濾離職員工並動態修復舊有的錯誤成交率快取）
+    const raw = (record.rawData || []).filter(e => !inactiveNames.has(e.name)).map(e => ({
+      ...e,
+      todayConvRate: e.todayLeads > 0 ? `${Math.min((e.todaySales / e.todayLeads) * 100, 100).toFixed(1)}%` : '0.0%'
+    }));
     const analyzed = record.analyzed41DaysData
-      ? record.analyzed41DaysData.filter(e => !inactiveNames.has(e.name))
+      ? record.analyzed41DaysData.filter(e => !inactiveNames.has(e.name)).map(e => ({
+        ...e,
+        todayConvRate: e.todayLeads > 0 ? `${Math.min((e.todaySales / e.todayLeads) * 100, 100).toFixed(1)}%` : '0.0%'
+      }))
       : undefined;
 
     setRawData([...raw]);
