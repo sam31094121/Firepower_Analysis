@@ -813,7 +813,7 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                         </div>
                         <div className="text-right">
                           <div className="text-xl font-black text-slate-900 tabular-nums leading-none">
-                            {emp.todayNetRevenue.toLocaleString()}
+                            {emp.todayNetRevenue?.toLocaleString() || 0}
                           </div>
                           <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-1">總業績</div>
                         </div>
@@ -833,7 +833,7 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                         </div>
                         <div className="bg-slate-50 p-2 rounded border border-slate-100">
                           <div className="text-[8px] text-slate-400 font-bold uppercase">派單價值</div>
-                          <div className="text-xs font-bold text-slate-800">{emp.avgOrderValue.toLocaleString()}</div>
+                          <div className="text-xs font-bold text-slate-800">{emp.avgOrderValue?.toLocaleString() || 0}</div>
                         </div>
                         <div className="col-span-3 grid grid-cols-2 gap-2 mt-1">
                           <div className="bg-slate-900 px-3 py-2 rounded flex justify-between items-center border border-white/10">

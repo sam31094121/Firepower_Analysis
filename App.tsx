@@ -1069,19 +1069,32 @@ const App: React.FC = () => {
                         const cumulativeResult: EmployeeData[] = [];
 
                         for (const emp of baseData) {
-                          const monthRecords = await getEmployeeDailyRecordsDB(emp.name, monthStart, endDate);
+                          const monthRecords = await getEmployeeDailyRecordsDB(emp.id || emp.name, monthStart, endDate);
                           const cRecords = monthRecords.filter(r => r.source === 'combined');
                           let leads = 0; let sales = 0; let rev = 0;
+                          let fSales = 0; let rSales = 0;
+                          let fCount = 0; let rCount = 0;
+
                           cRecords.forEach(r => {
                             leads += r.rawData.todayLeads || 0;
                             sales += r.rawData.todaySales || 0;
                             rev += r.rawData.todayNetRevenue || 0;
+                            fSales += r.rawData.todayFollowupSales || 0;
+                            rSales += r.rawData.todayRenewalSales || 0;
+                            fCount += r.rawData.followupCount || 0;
+                            rCount += r.rawData.renewalCount || 0;
                           });
+
                           cumulativeResult.push({
                             ...emp,
                             todayLeads: leads,
                             todaySales: sales,
                             todayNetRevenue: rev,
+                            todayFollowupSales: fSales,
+                            todayRenewalSales: rSales,
+                            followupCount: fCount,
+                            renewalCount: rCount,
+                            avgOrderValue: sales > 0 ? Math.round(rev / sales) : 0,
                             todayConvRate: leads > 0 ? `${((sales / leads) * 100).toFixed(1)}%` : '0.0%'
                           });
                         }
