@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { EmployeeProfile, EmployeeData } from '../types';
-import { getAllEmployeeProfilesDB, getEmployeeLatestRecordDB } from '../services/dbService';
+import { getAllEmployeeProfilesDB, getEmployeeLatestRecordDB, getEmployeeDailyRecordsDB } from '../services/dbService';
 
 interface Props {
     onClose: () => void;
     onSelectEmployee: (employee: EmployeeProfile) => void;
+    currentDate?: string;
 }
 
-const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
+const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee, currentDate }) => {
     const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
-    const [dataView, setDataView] = useState<'raw' | 'analyzed'>('raw');  // 數據視角
+    const [dataView, setDataView] = useState<'raw' | 'analyzed' | 'cumulative'>('raw');  // 數據視角
     const [latestRecordDates, setLatestRecordDates] = useState<Record<string, string>>({});
     const [latestRecordData, setLatestRecordData] = useState<Record<string, { raw?: EmployeeData; analyzed?: EmployeeData }>>({});
+    const [cumulativeData, setCumulativeData] = useState<Record<string, { leads: number, sales: number, revenue: number }>>({});
 
     useEffect(() => {
         loadEmployees();
@@ -27,6 +29,11 @@ const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
             // 載入每位員工的最新紀錄日期與數據
             const dates: Record<string, string> = {};
             const data: Record<string, { raw?: EmployeeData; analyzed?: EmployeeData }> = {};
+            const cumulative: Record<string, { leads: number, sales: number, revenue: number }> = {};
+
+            const queryDate = currentDate || new Date().toISOString().split('T')[0];
+            const monthStart = `${queryDate.substring(0, 7)}-01`;
+            const endDate = queryDate;
 
             for (const emp of allEmployees) {
                 const latestRecord = await getEmployeeLatestRecordDB(emp.id);
@@ -38,10 +45,29 @@ const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
                         analyzed: latestRecord.analyzed41DaysData
                     };
                 }
+
+                // 計算當月累計 (C表 + 整合表)
+                const monthRecords = await getEmployeeDailyRecordsDB(emp.id, monthStart, endDate);
+                const cRecords = monthRecords.filter(r => r.source === 'combined');
+
+                let leads = 0;
+                let sales = 0;
+                let revenue = 0;
+
+                cRecords.forEach(r => {
+                    leads += r.rawData.todayLeads || 0;
+                    sales += r.rawData.todaySales || 0;
+                    revenue += r.rawData.todayNetRevenue || 0;
+                });
+
+                if (leads > 0 || sales > 0 || revenue > 0) {
+                    cumulative[emp.id] = { leads, sales, revenue };
+                }
             }
 
             setLatestRecordDates(dates);
             setLatestRecordData(data);
+            setCumulativeData(cumulative);
         } catch (error) {
             console.error('載入員工清單失敗', error);
         }
@@ -139,6 +165,15 @@ const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
                         >
                             📈 41天分析
                         </button>
+                        <button
+                            onClick={() => setDataView('cumulative')}
+                            className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all ${dataView === 'cumulative'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                        >
+                            📊 當月累計
+                        </button>
                     </div>
                 </div>
 
@@ -210,6 +245,27 @@ const EmployeeDirectory: React.FC<Props> = ({ onClose, onSelectEmployee }) => {
                                                 {dataView === 'analyzed' && !latestRecordData[emp.id].analyzed && (
                                                     <div className="col-span-3 text-[10px] text-slate-400 italic">
                                                         尚未進行 41 天分析
+                                                    </div>
+                                                )}
+                                                {dataView === 'cumulative' && cumulativeData[emp.id] && (
+                                                    <>
+                                                        <div className="text-[10px]">
+                                                            <span className="text-slate-400">當月派單:</span>
+                                                            <span className="font-bold text-emerald-700 ml-1">{cumulativeData[emp.id].leads}</span>
+                                                        </div>
+                                                        <div className="text-[10px]">
+                                                            <span className="text-slate-400">當月派成:</span>
+                                                            <span className="font-bold text-emerald-700 ml-1">{cumulativeData[emp.id].sales}</span>
+                                                        </div>
+                                                        <div className="text-[10px]">
+                                                            <span className="text-slate-400">當月業績:</span>
+                                                            <span className="font-bold text-emerald-700 ml-1">{(cumulativeData[emp.id].revenue / 10000).toFixed(1)}萬</span>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                {dataView === 'cumulative' && !cumulativeData[emp.id] && (
+                                                    <div className="col-span-3 text-[10px] text-slate-400 italic">
+                                                        該月 C 表無數據
                                                     </div>
                                                 )}
                                             </div>

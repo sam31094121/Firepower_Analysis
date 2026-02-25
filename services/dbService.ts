@@ -8,7 +8,8 @@ import {
   query,
   where,
   orderBy,
-  writeBatch
+  writeBatch,
+  limit
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from "../types";
@@ -17,6 +18,7 @@ import { HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from "../types";
 const COLLECTION_RECORDS = "records";
 const COLLECTION_EMPLOYEE_PROFILES = "employeeProfiles";
 const COLLECTION_EMPLOYEE_DAILY_RECORDS = "employeeDailyRecords";
+const COLLECTION_DAILY_STATS = "dailyStats";
 
 // ==================== 歷史記錄管理函數 ====================
 
@@ -67,14 +69,75 @@ export const getAllRecordsDB = async (): Promise<HistoryRecord[]> => {
   }
 };
 
-export const deleteRecordDB = async (id: string): Promise<void> => {
+export const deleteRecordDB = async (id: string, archiveDate?: string, dataSource?: string): Promise<void> => {
   try {
+    const batch = writeBatch(db);
+
+    // 1. 刪除主紀錄文件
     const recordRef = doc(db, COLLECTION_RECORDS, id);
-    await deleteDoc(recordRef);
-    console.log("Firestore: 記錄已刪除:", id);
+    batch.delete(recordRef);
+
+    // 2. 如果提供了日期與資料源，進行深層清理
+    if (archiveDate && dataSource) {
+      console.log(`Firestore: 開始深層清理日期 ${archiveDate} (${dataSource}) 的關連數據`);
+
+      // 清理 employeeDailyRecords
+      const employeeRecordsRef = collection(db, COLLECTION_EMPLOYEE_DAILY_RECORDS);
+      const q1 = query(
+        employeeRecordsRef,
+        where("date", "==", archiveDate),
+        where("source", "==", dataSource)
+      );
+      const snapshot1 = await getDocs(q1);
+      snapshot1.docs.forEach(doc => batch.delete(doc.ref));
+
+      // 如果是整合模式，清理 dailyStats (C表)
+      if (dataSource === 'integrated' || dataSource === 'combined') {
+        const dailyStatsRef = collection(db, COLLECTION_DAILY_STATS);
+        const q2 = query(dailyStatsRef, where("date", "==", archiveDate));
+        const snapshot2 = await getDocs(q2);
+        snapshot2.docs.forEach(doc => batch.delete(doc.ref));
+      }
+    }
+
+    await batch.commit();
+    console.log("Firestore: 紀錄及其關連數據已刪除:", id);
   } catch (error) {
     console.error("Firestore: 刪除失敗", error);
     throw new Error("刪除失敗");
+  }
+};
+
+/**
+ * 徹底清空數據庫中與紀錄相關的所有動態數據
+ * (用於 handleClearAll 或系統重置)
+ */
+export const clearDetailedDataDB = async (): Promise<void> => {
+  const collectionsToClear = [
+    COLLECTION_RECORDS,
+    COLLECTION_EMPLOYEE_DAILY_RECORDS,
+    COLLECTION_DAILY_STATS
+  ];
+
+  for (const colName of collectionsToClear) {
+    try {
+      const colRef = collection(db, colName);
+      let hasMore = true;
+      while (hasMore) {
+        const q = query(colRef, limit(400));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+          hasMore = false;
+          continue;
+        }
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        console.log(`Firestore: 已清空 ${colName} 的 400 筆資料`);
+      }
+    } catch (error) {
+      console.error(`Firestore: 清空 ${colName} 失敗:`, error);
+    }
   }
 };
 

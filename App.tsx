@@ -21,7 +21,8 @@ import {
   createEmployeeProfileDB,
   updateEmployeeProfileDB,
   saveEmployeeDailyRecordDB,
-  getAllEmployeeProfilesDB
+  getAllEmployeeProfilesDB,
+  clearDetailedDataDB
 } from './services/dbService';
 import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from './types';
 import { getIntegratedDashboardData, getIntegratedTrendData } from './services/analyticsService';
@@ -81,7 +82,7 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   // 雙視角數據系統
-  const [dataView, setDataView] = useState<'raw' | 'analyzed'>('analyzed');  // 初始為 41天分析
+  const [dataView, setDataView] = useState<'raw' | 'analyzed' | 'cumulative'>('analyzed');  // 初始為 41天分析
   const [rawData, setRawData] = useState<EmployeeData[]>([]);  // 當日原始數據
   const [analyzed41DaysData, setAnalyzed41DaysData] = useState<EmployeeData[]>([]);  // 41天分析結果
   const [isAnalyzed, setIsAnalyzed] = useState(false);  // 是否已分析
@@ -734,20 +735,21 @@ const App: React.FC = () => {
   };
 
   const deleteRecord = async (id: string) => {
-    if (window.confirm("確定刪除這筆紀錄嗎？")) {
-      await deleteRecordDB(id);
+    if (window.confirm("確定刪除這筆紀錄嗎？(包含相關統計數據)")) {
+      const record = history.find(r => r.id === id);
+      await deleteRecordDB(id, record?.archiveDate, record?.dataSource);
       await refreshHistory();
-      showToast("紀錄已移除");
+      showToast("紀錄及其細節數據已移除");
     }
   };
 
   const handleClearAll = async () => {
     if (history.length === 0) return;
-    if (window.confirm("⚠️ 警告：這將永久刪除資料庫中的「所有」歷史存檔紀錄，且無法復原。確定要繼續嗎？")) {
+    if (window.confirm("⚠️ 警告：這將永久刪除「所有」歷史存檔紀錄及其統計數據。確定要繼續嗎？")) {
       try {
-        await clearAllRecordsDB();
+        await clearDetailedDataDB();
         await refreshHistory();
-        showToast("🧹 所有歷史紀錄已清空");
+        showToast("🧹 所有關連紀錄已徹底清空");
       } catch (e) {
         showToast("清空失敗", "error");
       }
@@ -1056,6 +1058,49 @@ const App: React.FC = () => {
                     當日原始
                   </button>
                   <button
+                    onClick={async () => {
+                      showToast('計算當月累計中...', 'loading');
+                      try {
+                        const queryDate = currentArchiveDate || new Date().toISOString().split('T')[0];
+                        const monthStart = `${queryDate.substring(0, 7)}-01`;
+                        const endDate = queryDate;
+                        const { getEmployeeDailyRecordsDB } = await import('./services/dbService');
+                        const baseData = rawData.length > 0 ? rawData : (analyzed41DaysData.length > 0 ? analyzed41DaysData : employees);
+                        const cumulativeResult: EmployeeData[] = [];
+
+                        for (const emp of baseData) {
+                          const monthRecords = await getEmployeeDailyRecordsDB(emp.name, monthStart, endDate);
+                          const cRecords = monthRecords.filter(r => r.source === 'combined');
+                          let leads = 0; let sales = 0; let rev = 0;
+                          cRecords.forEach(r => {
+                            leads += r.rawData.todayLeads || 0;
+                            sales += r.rawData.todaySales || 0;
+                            rev += r.rawData.todayNetRevenue || 0;
+                          });
+                          cumulativeResult.push({
+                            ...emp,
+                            todayLeads: leads,
+                            todaySales: sales,
+                            todayNetRevenue: rev,
+                            todayConvRate: leads > 0 ? `${((sales / leads) * 100).toFixed(1)}%` : '0.0%'
+                          });
+                        }
+                        setEmployees(cumulativeResult);
+                        setDataView('cumulative');
+                        showToast('當月累計計算完成');
+                      } catch (e) {
+                        console.error(e);
+                        showToast('累計計算失敗', 'error');
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dataView === 'cumulative'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-200'
+                      }`}
+                  >
+                    當月累計
+                  </button>
+                  <button
                     onClick={() => {
                       if (analyzed41DaysData.length > 0) {
                         setDataView('analyzed');
@@ -1122,6 +1167,7 @@ const App: React.FC = () => {
       {/* 員工詳細頁面 Modal */}
       {showEmployeeDirectory && (
         <EmployeeDirectory
+          currentDate={currentArchiveDate}
           onClose={() => setShowEmployeeDirectory(false)}
           onSelectEmployee={(emp) => {
             setSelectedEmployee(emp);
