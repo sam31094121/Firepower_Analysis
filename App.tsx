@@ -132,33 +132,46 @@ const App: React.FC = () => {
       }
 
       const records = await getAllRecordsDB();
-      const yishinAnalyzed = records
-        .filter((r) => r.dataSource === 'yishin' && r.isAnalyzed && (r.analyzed41DaysData?.length ?? 0) > 0)
+      // 過濾出有分析資料的紀錄
+      const analyzedRecords = records
+        .filter((r) => r.isAnalyzed && (r.analyzed41DaysData?.length ?? 0) > 0)
         .sort((a, b) => (b.archiveDate || '').localeCompare(a.archiveDate || ''));
-      const latest = yishinAnalyzed[0];
 
-      // 優先載入最新的數據日期
-      const initDate = latest?.archiveDate || new Date().toISOString().split('T')[0];
-      setCurrentArchiveDate(initDate);
+      const latest = analyzedRecords[0];
 
-      if (dataSourceMode === 'integrated') {
-        const integratedData = await getIntegratedDashboardData(initDate);
-        setEmployees(integratedData);
-        setRawData(integratedData);
-        setCurrentTitle(`${initDate} 雙軌整合數據`);
-        setIsAnalyzed(true);
-        setDataView('raw');
-      } else if (latest) {
+      if (latest) {
+        const initDate = latest.archiveDate || new Date().toISOString().split('T')[0];
+        setCurrentArchiveDate(initDate);
+
+        // 判斷最新紀錄是哪種模式
+        const isIntegrated = latest.dataSource === 'integrated' || latest.dataSource === 'combined';
+        setDataSourceMode(isIntegrated ? 'integrated' : 'manual');
+        setCurrentDataSource(isIntegrated ? 'combined' : (latest.dataSource as 'yishin' | 'minshi' | 'combined' || 'yishin'));
+
         const raw = (latest.rawData || []).filter(e => !inactiveSet.has(e.name));
         const analyzed = (latest.analyzed41DaysData || []).filter(e => !inactiveSet.has(e.name));
-        setCurrentDataSource('yishin');
+
         setRawData([...raw]);
         setAnalyzed41DaysData([...analyzed]);
         setIsAnalyzed(true);
-        setDataView('analyzed');
+        setDataView('analyzed'); // 這裡確保狀態同步
         setEmployees([...analyzed]);
-        setCurrentTitle(latest.title || `${latest.archiveDate} 奕心表`);
+        setCurrentTitle(latest.title || `${initDate} ${isIntegrated ? '雙軌整合數據' : '手動數據'}`);
+
+        if (isIntegrated) {
+          // 額外拉取雙軌整合的趨勢資料
+          const trendData = await getIntegratedTrendData(initDate, initDate);
+          if (trendData && trendData.length > 0) {
+            setIntegratedTrendData(trendData);
+          }
+        }
+      } else {
+        // 如果完全沒有歷史紀錄
+        setCurrentArchiveDate(new Date().toISOString().split('T')[0]);
+        setDataSourceMode('integrated'); // 預設使用新版
+        setCurrentTitle('無歷史紀錄');
       }
+
       await refreshHistory();
     };
     initDisplay();
@@ -392,6 +405,7 @@ const App: React.FC = () => {
             if (!existing) {
               // 第一次遇到此員工，只保留需要累加的原始數據欄位
               employeeMap.set(emp.name, {
+                id: emp.id || emp.name,
                 name: emp.name,
                 dayCount: 1,  // 追蹤出現天數
                 todayLeads: emp.todayLeads || 0,
@@ -399,6 +413,8 @@ const App: React.FC = () => {
                 todayNetRevenue: emp.todayNetRevenue || 0,
                 followupCount: emp.followupCount || 0,
                 todayFollowupSales: emp.todayFollowupSales || 0,
+                renewalCount: emp.renewalCount || 0,
+                todayRenewalSales: emp.todayRenewalSales || 0,
                 monthlyTotalLeads: emp.monthlyTotalLeads || 0,
                 monthlyLeadSales: emp.monthlyLeadSales || 0,
                 monthlyFollowupSales: emp.monthlyFollowupSales || 0,
@@ -422,6 +438,8 @@ const App: React.FC = () => {
               existing.todayNetRevenue += emp.todayNetRevenue || 0;
               existing.followupCount += emp.followupCount || 0;
               existing.todayFollowupSales += emp.todayFollowupSales || 0;
+              existing.renewalCount += emp.renewalCount || 0;
+              existing.todayRenewalSales += emp.todayRenewalSales || 0;
               existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
               existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
               existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
@@ -456,6 +474,7 @@ const App: React.FC = () => {
             if (!existing) {
               // 當日新員工，直接加入
               employeeMap.set(emp.name, {
+                id: emp.id || emp.name,
                 name: emp.name,
                 dayCount: 1,
                 todayLeads: emp.todayLeads || 0,
@@ -463,6 +482,8 @@ const App: React.FC = () => {
                 todayNetRevenue: emp.todayNetRevenue || 0,
                 followupCount: emp.followupCount || 0,
                 todayFollowupSales: emp.todayFollowupSales || 0,
+                renewalCount: emp.renewalCount || 0,
+                todayRenewalSales: emp.todayRenewalSales || 0,
                 monthlyTotalLeads: emp.monthlyTotalLeads || 0,
                 monthlyLeadSales: emp.monthlyLeadSales || 0,
                 monthlyFollowupSales: emp.monthlyFollowupSales || 0,
@@ -486,6 +507,8 @@ const App: React.FC = () => {
               existing.todayNetRevenue += emp.todayNetRevenue || 0;
               existing.followupCount += emp.followupCount || 0;
               existing.todayFollowupSales += emp.todayFollowupSales || 0;
+              existing.renewalCount += emp.renewalCount || 0;
+              existing.todayRenewalSales += emp.todayRenewalSales || 0;
               existing.monthlyTotalLeads += emp.monthlyTotalLeads || 0;
               existing.monthlyLeadSales += emp.monthlyLeadSales || 0;
               existing.monthlyFollowupSales += emp.monthlyFollowupSales || 0;
@@ -504,7 +527,11 @@ const App: React.FC = () => {
           });
         }
 
-        aggregatedData = Array.from(employeeMap.values());
+        aggregatedData = Array.from(employeeMap.values()).map(emp => ({
+          ...emp,
+          avgOrderValue: emp.todaySales > 0 ? Math.round(emp.todayNetRevenue / emp.todaySales) : 0,
+          todayConvRate: emp.todayLeads > 0 ? `${((emp.todaySales / emp.todayLeads) * 100).toFixed(1)}%` : '0.0%'
+        }));
       }
 
       // 4.5 自動計算排名（使用 calculateRankings）
@@ -1095,7 +1122,15 @@ const App: React.FC = () => {
                             followupCount: fCount,
                             renewalCount: rCount,
                             avgOrderValue: sales > 0 ? Math.round(rev / sales) : 0,
-                            todayConvRate: leads > 0 ? `${((sales / leads) * 100).toFixed(1)}%` : '0.0%'
+                            todayConvRate: leads > 0 ? `${((sales / leads) * 100).toFixed(1)}%` : '0.0%',
+                            // 保留原始 AI 分析狀態與排名 (為了能在儀表板上顯示)
+                            category: emp.category,
+                            categoryRank: emp.categoryRank,
+                            aiAdvice: emp.aiAdvice,
+                            scoutAdvice: emp.scoutAdvice,
+                            revenueRank: emp.revenueRank || '0',
+                            avgPriceRank: emp.avgPriceRank || '0',
+                            followupRank: emp.followupRank || '0'
                           });
                         }
                         setEmployees(cumulativeResult);

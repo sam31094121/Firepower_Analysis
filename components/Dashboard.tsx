@@ -154,11 +154,12 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
 
   // 統合派單順序邏輯
   const dispatchOrder = [...employees].sort((a, b) => {
-    const categoryPriority = {
+    const categoryPriority: Record<string, number> = {
       [EmployeeCategory.FIREPOWER]: 1,
-      [EmployeeCategory.STEADY]: 2,
-      [EmployeeCategory.NEEDS_IMPROVEMENT]: 3,
-      [EmployeeCategory.RISK]: 4,
+      [EmployeeCategory.POTENTIAL]: 2,
+      [EmployeeCategory.STEADY]: 3,
+      [EmployeeCategory.NEEDS_IMPROVEMENT]: 4,
+      [EmployeeCategory.RISK]: 5,
     };
 
     const aPriority = categoryPriority[a.category] || 99;
@@ -504,7 +505,7 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                 <div>
                   <div className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-1">團隊平均派單價值</div>
                   <div className="text-2xl font-black text-blue-600 tabular-nums">
-                    ${Math.round(employees.reduce((sum, e) => sum + e.avgOrderValue, 0) / employees.length).toLocaleString()}
+                    ${Math.round(employees.reduce((sum, e) => sum + (e.avgOrderValue || 0), 0) / (employees.length || 1)).toLocaleString()}
                   </div>
                 </div>
                 <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-2xl">
@@ -685,7 +686,7 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                             {/* 派單價值對比 */}
                             <div>
                               <div className="flex justify-between text-[9px] mb-1">
-                                <span className="text-slate-300">派單價值: ${emp.avgOrderValue.toLocaleString()}</span>
+                                <span className="text-slate-300">派單價值: ${(emp.avgOrderValue || 0).toLocaleString()}</span>
                                 <span className={emp.avgOrderValue >= teamAvgAov ? 'text-emerald-400' : 'text-rose-400'}>
                                   {emp.avgOrderValue >= teamAvgAov ? '↑' : '↓'} {Math.abs(Math.round((emp.avgOrderValue / teamAvgAov - 1) * 100))}%
                                 </span>
@@ -726,7 +727,7 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                           </div>
                           <div className="bg-blue-500/20 rounded-xl p-3 border border-white/10">
                             <div className="text-[10px] text-slate-400 font-black uppercase mb-1">派單價值</div>
-                            <div className="text-sm font-black text-blue-400">${emp.avgOrderValue.toLocaleString()}</div>
+                            <div className="text-sm font-black text-blue-400">${(emp.avgOrderValue || 0).toLocaleString()}</div>
                           </div>
                         </div>
                       </div>

@@ -28,7 +28,7 @@ const checkApiKey = () => {
   return apiKey;
 };
 
-export const analyzePerformance = async (data: EmployeeData[]): Promise<EmployeeData[]> => {
+export const analyzePerformance = async (data: EmployeeData[], retryCount = 0): Promise<EmployeeData[]> => {
   const apiKey = checkApiKey();
   const ai = new GoogleGenAI({ apiKey });
 
@@ -108,7 +108,7 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
     const analyzedResults = JSON.parse(response.text);
 
     return data.map(emp => {
-      const match = analyzedResults.find((a: any) => a.id === emp.id);
+      const match = analyzedResults.find((a: any) => String(a.id) === String(emp.id));
 
       let finalCategory = EmployeeCategory.STEADY;
       if (match?.category) {
@@ -122,6 +122,8 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
 
       return {
         ...emp,
+        avgOrderValue: Number(emp.avgOrderValue) || 0, // 確保為數值
+        todayNetRevenue: Number(emp.todayNetRevenue) || 0,
         category: finalCategory,
         categoryRank: match?.categoryRank || 99,
         aiAdvice: match?.aiAdvice || '數據不足以支持決策,建議暫停派單觀察。',
@@ -130,9 +132,25 @@ export const analyzePerformance = async (data: EmployeeData[]): Promise<Employee
     });
   } catch (error: any) {
     console.error("AI Analysis failed:", error);
+
+    // 檢查是否為 503 或高負載錯誤
+    const isHighDemand = error?.message?.includes('503') || error?.status === 'UNAVAILABLE';
+
+    if (isHighDemand && retryCount < 3) {
+      console.warn(`⏳ API 高負載，正在進行第 ${retryCount + 1} 次重試...`);
+      // 延遲重試 (Exponential Backoff: 2s, 4s, 6s)
+      await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1)));
+      return analyzePerformance(data, retryCount + 1);
+    }
+
     if (error?.message?.includes('429') || error?.message?.includes('quota')) {
       throw new Error("🚀 您的 API Key 已達免費額度上限 (429)！請稍候 60 秒再試，或至 Google AI Studio 檢查配額。");
     }
+
+    if (isHighDemand) {
+      throw new Error("😞 Google AI 伺服器目前大塞車 (503 High Demand)。已經幫您嘗試重連 3 次仍失敗，請稍待一兩分鐘後再試試看！");
+    }
+
     throw error;
   }
 };
