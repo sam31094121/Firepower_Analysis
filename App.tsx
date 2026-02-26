@@ -24,7 +24,7 @@ import {
   getAllEmployeeProfilesDB,
   clearDetailedDataDB
 } from './services/dbService';
-import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord } from './types';
+import { EmployeeData, HistoryRecord, EmployeeProfile, EmployeeDailyRecord, EmployeeCategory } from './types';
 import { getIntegratedDashboardData, getIntegratedTrendData } from './services/analyticsService';
 
 type AppArea = 'analysis' | 'input';
@@ -1091,17 +1091,38 @@ const App: React.FC = () => {
                         const queryDate = currentArchiveDate || new Date().toISOString().split('T')[0];
                         const monthStart = `${queryDate.substring(0, 7)}-01`;
                         const endDate = queryDate;
-                        const { getEmployeeDailyRecordsDB } = await import('./services/dbService');
+                        const { getEmployeeDailyRecordsDB, getAllRecordsDB } = await import('./services/dbService');
                         const baseData = rawData.length > 0 ? rawData : (analyzed41DaysData.length > 0 ? analyzed41DaysData : employees);
                         const cumulativeResult: EmployeeData[] = [];
 
+                        // 針對舊系統（未轉換為 EmployeeDailyRecords 的原始 HistoryRecord）
+                        const allRecords = await getAllRecordsDB();
+                        const validHistoryRecords = allRecords.filter(r => {
+                          if (!r.archiveDate || r.archiveDate < monthStart || r.archiveDate > endDate) return false;
+                          if (dataSourceMode === 'integrated') {
+                            return r.dataSource === 'integrated' || r.dataSource === 'combined';
+                          }
+                          return !r.dataSource || String(r.dataSource) === String(currentDataSource) || r.dataSource === 'combined';
+                        });
+
                         for (const emp of baseData) {
-                          const monthRecords = await getEmployeeDailyRecordsDB(emp.id || emp.name, monthStart, endDate);
-                          const cRecords = monthRecords.filter(r => r.source === 'combined');
+                          // 手動模式下 employeeId 是存姓名，整合模式下是存 UUID
+                          const dbEmpId = dataSourceMode === 'integrated' ? (emp.id || emp.name) : emp.name;
+                          const monthRecords = await getEmployeeDailyRecordsDB(dbEmpId, monthStart, endDate);
+                          const cRecords = monthRecords.filter(r => {
+                            if (dataSourceMode === 'integrated') {
+                              return r.source === 'integrated' || r.source === 'combined';
+                            }
+                            return !r.source || String(r.source) === String(currentDataSource) || r.source === 'combined';
+                          });
+
                           let leads = 0; let sales = 0; let rev = 0;
                           let fSales = 0; let rSales = 0;
                           let fCount = 0; let rCount = 0;
 
+                          let actualRecordsCount = 0;
+
+                          // 1. 新制累加 (EmployeeDailyRecords)
                           cRecords.forEach(r => {
                             leads += r.rawData.todayLeads || 0;
                             sales += r.rawData.todaySales || 0;
@@ -1111,6 +1132,26 @@ const App: React.FC = () => {
                             fCount += r.rawData.followupCount || 0;
                             rCount += r.rawData.renewalCount || 0;
                           });
+                          actualRecordsCount += cRecords.length;
+
+                          // 2. 舊制備援 (如果新系統沒東西，就去挖舊的 HistoryRecords)
+                          if (cRecords.length === 0) {
+                            validHistoryRecords.forEach(r => {
+                              const empRecord = (r.rawData || []).find(e => e.name === emp.name);
+                              if (empRecord) {
+                                leads += empRecord.todayLeads || 0;
+                                sales += empRecord.todaySales || 0;
+                                rev += empRecord.todayNetRevenue || 0;
+                                fSales += empRecord.todayFollowupSales || 0;
+                                rSales += empRecord.todayRenewalSales || 0;
+                                fCount += empRecord.followupCount || 0;
+                                rCount += empRecord.renewalCount || 0;
+                                actualRecordsCount++;
+                              }
+                            });
+                          }
+
+                          console.log(`[當月累計] 員工: ${emp.name}, 加總紀錄數: ${actualRecordsCount}, 總派單(Leads): ${leads}`);
 
                           cumulativeResult.push({
                             ...emp,
@@ -1133,9 +1174,73 @@ const App: React.FC = () => {
                             followupRank: emp.followupRank || '0'
                           });
                         }
-                        setEmployees(cumulativeResult);
+
+                        // 專業顧問派單邏輯 (無 AI) - 嚴謹權重演算法
+                        const validLeadsEmps = cumulativeResult.filter(e => e.todayLeads > 0);
+                        const teamLeads = validLeadsEmps.reduce((s, e) => s + e.todayLeads, 0);
+                        const teamSales = validLeadsEmps.reduce((s, e) => s + e.todaySales, 0);
+                        const teamRev = validLeadsEmps.reduce((s, e) => s + e.todayNetRevenue, 0);
+
+                        // RPL (Revenue Per Lead) = 派單期望產值。這是消除偏見、極大化業績的最核心指標
+                        const teamAvgRPL = teamLeads > 0 ? teamRev / teamLeads : 0;
+
+                        const sortedLeads = [...validLeadsEmps].sort((a, b) => a.todayLeads - b.todayLeads);
+                        const medianLeads = sortedLeads.length > 0 ? sortedLeads[Math.floor(sortedLeads.length / 2)].todayLeads : 0;
+
+                        const rankedCumulative = calculateRankings(cumulativeResult);
+
+                        const expertCategorized = rankedCumulative.map(emp => {
+                          const leads = emp.todayLeads;
+                          const rev = emp.todayNetRevenue;
+                          const rpl = leads > 0 ? rev / leads : 0;
+
+                          const revRankNum = parseInt(emp.revenueRank) || 99;
+                          const aovRankNum = parseInt(emp.avgPriceRank) || 99;
+
+                          let finalCategory = EmployeeCategory.STEADY;
+                          let aiAdvice = "";
+                          let scoutAdvice = "";
+                          let categoryRank = revRankNum;
+
+                          if (leads === 0) {
+                            finalCategory = EmployeeCategory.RISK;
+                            aiAdvice = "缺乏足夠派單數據，無法計算派單期望產值(RPL)。";
+                            categoryRank = 99;
+                          } else if (rpl >= teamAvgRPL * 1.2 && leads <= medianLeads * 0.7) {
+                            finalCategory = EmployeeCategory.POTENTIAL;
+                            aiAdvice = `【量化警告】派單期望產值(RPL: $${Math.round(rpl)})超越團隊水平，但資源分配嚴重落後。應立即打破人為派單偏見，傾斜資源至此以最大化整體營收。`;
+                            scoutAdvice = `RPL $${Math.round(rpl)} 高於均值，消除人為分配不均，務必立刻加碼測試其承載上限。`;
+                            categoryRank = 1;
+                          } else if (rpl >= teamAvgRPL * 1.1) {
+                            finalCategory = EmployeeCategory.FIREPOWER;
+                            aiAdvice = `【權重優勢】派單期望產值(RPL: $${Math.round(rpl)})高踞前段。依據營收最大化演算法，每一張單派給他都是最高期望值，不可中斷高質量供單。`;
+                            categoryRank = revRankNum;
+                          } else if (rpl < teamAvgRPL * 0.7 && leads >= medianLeads) {
+                            finalCategory = EmployeeCategory.RISK;
+                            aiAdvice = `【資源損耗】派單期望產值(RPL: $${Math.round(rpl)})大幅低於公司底線，且持續消耗大量無效派單，從數據面顯示應立刻停損。`;
+                            categoryRank = parseInt(emp.followupRank) || 99;
+                          } else if (rpl < teamAvgRPL * 0.9) {
+                            finalCategory = EmployeeCategory.NEEDS_IMPROVEMENT;
+                            aiAdvice = `【轉換衰退】派單產值偏弱。需透過客單與轉換率的數據清洗尋找破口，並安排話術矯治，不宜盲目擴張資源。`;
+                            categoryRank = aovRankNum;
+                          } else {
+                            finalCategory = EmployeeCategory.STEADY;
+                            aiAdvice = `【產值平穩】派單期望產值(RPL: $${Math.round(rpl)})貼近常態分佈。做為團隊底盤支撐，應維持精準穩定的供單。`;
+                            categoryRank = revRankNum;
+                          }
+
+                          return {
+                            ...emp,
+                            category: finalCategory,
+                            categoryRank: categoryRank,
+                            aiAdvice: `[演算法極效決策] ${aiAdvice}`,
+                            scoutAdvice: scoutAdvice ? `[數據清洗雷達] ${scoutAdvice}` : ""
+                          };
+                        });
+
+                        setEmployees(expertCategorized);
                         setDataView('cumulative');
-                        showToast('當月累計計算完成');
+                        showToast(`已載入當月累計數據（共 ${expertCategorized.length} 人）`);
                       } catch (e) {
                         console.error(e);
                         showToast('累計計算失敗', 'error');

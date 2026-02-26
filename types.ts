@@ -128,7 +128,7 @@ export interface EmployeeDailyRecord {
     actualRecordCount: number; // 實際抓到的記錄筆數
   };
 
-  source: 'minshi' | 'yishin' | 'combined'; // 資料來源
+  source: 'minshi' | 'yishin' | 'combined' | 'integrated'; // 資料來源
   createdAt: string;             // 建立時間
 }
 
