@@ -413,71 +413,117 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
         );
       })()}
 
-      {/* 派單順序卡片 (主視覺區) - 淺色主題 */}
+      {/* 派單順序卡片 - 排行榜列表設計 */}
       {employees.length > 0 && (
-        <div className="bg-white rounded-2xl overflow-hidden shadow-xl border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <div className="flex items-center space-x-4">
-              <span className="text-3xl">🎯</span>
-              <div>
-                <h2 className="text-slate-900 text-xl font-black tracking-tight">當前最優派單順序 (AI 建議)</h2>
-                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">整合四大維度排名，點擊人員查看詳情</p>
+        <div className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500 mb-8 max-w-5xl mx-auto">
+          {/* 排行榜頭部 (參考原圖的深色質感) */}
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 relative overflow-hidden flex justify-between items-center">
+            {/* 裝飾性背景光暈與幾何圖形 */}
+            <div className="absolute -right-10 -top-20 w-80 h-80 bg-rose-500/20 rounded-full blur-3xl mix-blend-screen pointer-events-none"></div>
+            <div className="absolute right-20 -bottom-20 w-64 h-64 bg-orange-500/10 rounded-full blur-2xl mix-blend-screen pointer-events-none"></div>
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 w-full h-full opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at center, #ffffff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+
+            <div className="relative z-10 flex items-center space-x-5">
+              <div className="w-14 h-14 bg-gradient-to-tr from-rose-500 to-orange-400 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-500/30 transform -rotate-6">
+                <span className="text-3xl filter drop-shadow">🏆</span>
               </div>
-            </div>
-            <div className="hidden sm:block bg-blue-50 border border-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter">
-              AI 數據導引
+              <div>
+                <h2 className="text-white text-3xl font-black tracking-tight flex items-center drop-shadow-md">
+                  排行榜 <span className="ml-3 text-sm font-bold bg-white/10 text-rose-200 px-3 py-1 rounded-full border border-white/20 uppercase tracking-widest backdrop-blur-sm">TOP DISPATCH</span>
+                </h2>
+                <p className="text-slate-300 text-sm font-medium mt-1.5 flex items-center">
+                  當前最優派單順序 (AI 演算法極效決策)
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-              {dispatchOrder.map((emp, index) => (
-                <div
-                  key={emp.id}
-                  onClick={() => scrollToEmployee(emp.id)}
-                  className="group flex bg-slate-50 hover:bg-white border border-slate-100 hover:border-blue-200 rounded-2xl p-5 transition-all cursor-pointer relative overflow-hidden shadow-sm hover:shadow-md"
-                >
+          {/* 欄位標題 */}
+          <div className="flex bg-rose-50/50 border-b border-rose-100/60 px-8 py-3 text-xs font-bold text-rose-800 uppercase tracking-widest">
+            <div className="w-16 text-center">排名</div>
+            <div className="flex-1 pl-4">顧問資訊</div>
+            <div className="w-24 text-right">成交率</div>
+          </div>
 
-                  <div className="relative flex items-start space-x-4 w-full">
-                    <div className="flex-shrink-0 flex flex-col items-center space-y-2">
-                      <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center font-black text-lg border border-slate-700 shadow-lg text-white">
-                        {index + 1}
+          {/* 列表內容區 */}
+          <div className="max-h-[600px] overflow-y-auto custom-scrollbar bg-white">
+            <div className="flex flex-col">
+              {dispatchOrder.map((emp, index) => {
+                const isTop3 = index < 3;
+                const rankColor =
+                  index === 0 ? 'text-amber-500' :
+                    index === 1 ? 'text-slate-400' :
+                      index === 2 ? 'text-amber-700' : 'text-slate-800';
+
+                const rankNumStr = (index + 1).toString().padStart(2, '0');
+
+                return (
+                  <div
+                    key={emp.id}
+                    onClick={() => scrollToEmployee(emp.id)}
+                    className="group flex items-center justify-between px-8 py-5 border-b border-slate-100 hover:bg-slate-50/80 transition-all cursor-pointer relative overflow-hidden"
+                  >
+                    {/* 背景發光效果供 hover 時顯示 */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-50/0 to-transparent group-hover:via-blue-50/50 transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none"></div>
+
+                    <div className="flex items-center space-x-6 relative z-10 w-full">
+                      {/* 名次數字 */}
+                      <div className={`w-12 text-center text-3xl font-black italic tracking-tighter ${rankColor} drop-shadow-sm`}>
+                        {rankNumStr}.
                       </div>
-                      <span className="text-2xl filter drop-shadow-sm">
-                        {emp.category === EmployeeCategory.FIREPOWER ? '🔥' :
-                          emp.category === EmployeeCategory.STEADY ? '💎' :
-                            emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? '⚠️' : '🛑'}
-                      </span>
-                    </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="text-slate-900 font-black text-base truncate pr-2">{emp.name}</h4>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border truncate ${emp.category === EmployeeCategory.FIREPOWER ? 'bg-orange-50 border-orange-100 text-orange-600' :
-                          emp.category === EmployeeCategory.STEADY ? 'bg-blue-50 border-blue-100 text-blue-600' :
-                            emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? 'bg-amber-50 border-amber-100 text-amber-600' :
-                              'bg-rose-50 border-rose-100 text-rose-600'
+                      {/* 頭像/Icon區 */}
+                      <div className="relative flex-shrink-0">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-sm border-2 ${emp.category === EmployeeCategory.FIREPOWER ? 'bg-orange-50 border-orange-200 text-orange-600' :
+                          emp.category === EmployeeCategory.STEADY ? 'bg-blue-50 border-blue-200 text-blue-600' :
+                            emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                              'bg-rose-50 border-rose-200 text-rose-600'
                           }`}>
-                          {emp.category}
-                        </span>
+                          {emp.category === EmployeeCategory.FIREPOWER ? '🔥' :
+                            emp.category === EmployeeCategory.STEADY ? '💎' :
+                              emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? '⚠️' : '🛑'}
+                        </div>
+                        {index === 0 && <div className="absolute -top-3 -right-3 text-3xl filter drop-shadow-md transform rotate-12 animate-bounce-slight">👑</div>}
+                        {index === 1 && <div className="absolute -top-2 -right-2 text-2xl filter drop-shadow-md">🥈</div>}
+                        {index === 2 && <div className="absolute -top-2 -right-2 text-2xl filter drop-shadow-md">🥉</div>}
                       </div>
 
-                      <div className="flex items-center space-x-3 mb-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>成交率 {emp.todayConvRate}</span>
-                        <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></span>業績 #{emp.revenueRank}</span>
+                      {/* 內容區塊 */}
+                      <div className="flex-1 min-w-0 py-1">
+                        <div className="flex items-center space-x-3 mb-1.5">
+                          <h4 className="text-slate-900 font-extrabold text-lg truncate group-hover:text-blue-600 transition-colors">{emp.name}</h4>
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm ${emp.category === EmployeeCategory.FIREPOWER ? 'bg-orange-50 border-orange-200 text-orange-600' :
+                            emp.category === EmployeeCategory.STEADY ? 'bg-blue-50 border-blue-200 text-blue-600' :
+                              emp.category === EmployeeCategory.NEEDS_IMPROVEMENT ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                                'bg-rose-50 border-rose-200 text-rose-600'
+                            }`}>
+                            {emp.category}
+                          </span>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
+                            業績榜 {emp.revenueRank}
+                          </span>
+                        </div>
+
+                        {/* AI / 演算法 建議縮影 */}
+                        <div className="text-xs text-slate-500 leading-relaxed max-w-2xl truncate group-hover:text-slate-700 transition-colors">
+                          <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-400 mr-1.5 align-middle mix-blend-multiply">詳情</span>
+                          {emp.aiAdvice.replace(/\[.*?\]\s*/, '')} {/* 移除標籤讓列表較乾淨 */}
+                        </div>
                       </div>
 
-                      <div className="bg-white rounded-xl p-3 border border-slate-200 group-hover:border-blue-100 transition-colors shadow-inner">
-                        <p className="text-xs text-slate-600 font-medium leading-relaxed italic">
-                          "{emp.aiAdvice}"
-                        </p>
+                      {/* 核心數據顯示 (右側大數字) */}
+                      <div className="flex flex-col items-end justify-center pr-2 flex-shrink-0">
+                        <div className="text-3xl font-black text-rose-500 drop-shadow-sm tracking-tight">
+                          {emp.todayConvRate.replace('%', '')}<span className="text-lg font-bold text-rose-400 ml-0.5">%</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
+
         </div>
       )}
 

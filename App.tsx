@@ -950,12 +950,12 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-10 w-full flex-1">
-        <div className="flex flex-col lg:flex-row gap-10">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-8 py-10 w-full flex-1">
+        <div className="flex flex-col lg:flex-row gap-8 xl:gap-12">
           {/* 左側欄：分析區僅顯示月曆，輸入區顯示全部 */}
           {/* 在「營運儀表」模式下隱藏側邊欄 */}
           {!(activeArea === 'analysis' && activeTab === 'operational') && (
-            <div className="w-full lg:w-80 space-y-6">
+            <div className="w-full lg:w-96 xl:w-[420px] shrink-0 space-y-6 xl:space-y-8">
               {activeArea === 'input' && (
                 <>
                   {/* 員工清單按鈕 - 僅輸入區 */}
@@ -1176,6 +1176,20 @@ const App: React.FC = () => {
                         }
 
                         // 專業顧問派單邏輯 (無 AI) - 嚴謹權重演算法
+                        const CATEGORY_CONFIG = {
+                          RPL_HIGH_MULTIPLIER: 1.2,    // 高 RPL 倍率（潛力組）
+                          RPL_FIREPOWER_MULTIPLIER: 1.1, // 火力組倍率
+                          RPL_RISK_MULTIPLIER: 0.7,    // 風險組倍率
+                          RPL_IMPROVEMENT_MULTIPLIER: 0.9, // 加強組倍率
+                          LEADS_LOW_MULTIPLIER: 0.7,   // 低派單量倍率（用於潛力識別）
+                          DEFAULT_RANK: 99,            // 無效排名預設
+                        } as const;
+
+                        function safeParseRank(rankStr: string | number | undefined): number {
+                          const parsed = parseInt(String(rankStr ?? ''), 10);
+                          return isNaN(parsed) || parsed < 0 ? CATEGORY_CONFIG.DEFAULT_RANK : parsed;
+                        }
+
                         const validLeadsEmps = cumulativeResult.filter(e => e.todayLeads > 0);
                         const teamLeads = validLeadsEmps.reduce((s, e) => s + e.todayLeads, 0);
                         const teamSales = validLeadsEmps.reduce((s, e) => s + e.todaySales, 0);
@@ -1185,7 +1199,12 @@ const App: React.FC = () => {
                         const teamAvgRPL = teamLeads > 0 ? teamRev / teamLeads : 0;
 
                         const sortedLeads = [...validLeadsEmps].sort((a, b) => a.todayLeads - b.todayLeads);
-                        const medianLeads = sortedLeads.length > 0 ? sortedLeads[Math.floor(sortedLeads.length / 2)].todayLeads : 0;
+                        const len = sortedLeads.length;
+                        const medianLeads = len > 0
+                          ? len % 2 === 1
+                            ? sortedLeads[Math.floor(len / 2)].todayLeads
+                            : (sortedLeads[len / 2 - 1].todayLeads + sortedLeads[len / 2].todayLeads) / 2
+                          : 0;
 
                         const rankedCumulative = calculateRankings(cumulativeResult);
 
@@ -1194,8 +1213,9 @@ const App: React.FC = () => {
                           const rev = emp.todayNetRevenue;
                           const rpl = leads > 0 ? rev / leads : 0;
 
-                          const revRankNum = parseInt(emp.revenueRank) || 99;
-                          const aovRankNum = parseInt(emp.avgPriceRank) || 99;
+                          const revRankNum = safeParseRank(emp.revenueRank);
+                          const aovRankNum = safeParseRank(emp.avgPriceRank);
+                          const followupRankNum = safeParseRank(emp.followupRank);
 
                           let finalCategory = EmployeeCategory.STEADY;
                           let aiAdvice = "";
@@ -1204,28 +1224,28 @@ const App: React.FC = () => {
 
                           if (leads === 0) {
                             finalCategory = EmployeeCategory.RISK;
-                            aiAdvice = "缺乏足夠派單數據，無法計算派單期望產值(RPL)。";
-                            categoryRank = 99;
-                          } else if (rpl >= teamAvgRPL * 1.2 && leads <= medianLeads * 0.7) {
+                            aiAdvice = "缺乏足夠派單數據，無法計算派單期望產值(RPL)。建議收集至少 5 張派單數據以評估。";
+                            categoryRank = CATEGORY_CONFIG.DEFAULT_RANK;
+                          } else if (rpl >= teamAvgRPL * CATEGORY_CONFIG.RPL_HIGH_MULTIPLIER && leads <= medianLeads * CATEGORY_CONFIG.LEADS_LOW_MULTIPLIER) {
                             finalCategory = EmployeeCategory.POTENTIAL;
-                            aiAdvice = `【量化警告】派單期望產值(RPL: $${Math.round(rpl)})超越團隊水平，但資源分配嚴重落後。應立即打破人為派單偏見，傾斜資源至此以最大化整體營收。`;
-                            scoutAdvice = `RPL $${Math.round(rpl)} 高於均值，消除人為分配不均，務必立刻加碼測試其承載上限。`;
+                            aiAdvice = `【量化警告】派單期望產值(RPL: $${Math.round(rpl)})超越團隊水平，但資源分配嚴重落後。應立即打破人為派單偏見，傾斜資源至此以最大化整體營收。潛在影響：若多派 20% 單，可提升團隊 5-10% 總業績。`;
+                            scoutAdvice = `RPL $${Math.round(rpl)} 高於均值，消除人為分配不均，務必立刻加碼測試其承載上限（建議從 +10% 派單開始監測）。`;
                             categoryRank = 1;
-                          } else if (rpl >= teamAvgRPL * 1.1) {
+                          } else if (rpl >= teamAvgRPL * CATEGORY_CONFIG.RPL_FIREPOWER_MULTIPLIER) {
                             finalCategory = EmployeeCategory.FIREPOWER;
-                            aiAdvice = `【權重優勢】派單期望產值(RPL: $${Math.round(rpl)})高踞前段。依據營收最大化演算法，每一張單派給他都是最高期望值，不可中斷高質量供單。`;
+                            aiAdvice = `【權重優勢】派單期望產值(RPL: $${Math.round(rpl)})高踞前段。依據營收最大化演算法，每一張單派給他都是最高期望值，不可中斷高質量供單。建議維持 80% 以上派單佔比。`;
                             categoryRank = revRankNum;
-                          } else if (rpl < teamAvgRPL * 0.7 && leads >= medianLeads) {
+                          } else if (rpl < teamAvgRPL * CATEGORY_CONFIG.RPL_RISK_MULTIPLIER && leads >= medianLeads) {
                             finalCategory = EmployeeCategory.RISK;
-                            aiAdvice = `【資源損耗】派單期望產值(RPL: $${Math.round(rpl)})大幅低於公司底線，且持續消耗大量無效派單，從數據面顯示應立刻停損。`;
-                            categoryRank = parseInt(emp.followupRank) || 99;
-                          } else if (rpl < teamAvgRPL * 0.9) {
+                            aiAdvice = `【資源損耗】派單期望產值(RPL: $${Math.round(rpl)})大幅低於公司底線，且持續消耗大量無效派單，從數據面顯示應立刻停損。潛在風險：繼續派單可能導致 15-20% 資源浪費。`;
+                            categoryRank = followupRankNum;
+                          } else if (rpl < teamAvgRPL * CATEGORY_CONFIG.RPL_IMPROVEMENT_MULTIPLIER) {
                             finalCategory = EmployeeCategory.NEEDS_IMPROVEMENT;
-                            aiAdvice = `【轉換衰退】派單產值偏弱。需透過客單與轉換率的數據清洗尋找破口，並安排話術矯治，不宜盲目擴張資源。`;
+                            aiAdvice = `【轉換衰退】派單產值偏弱。需透過客單與轉換率的數據清洗尋找破口，並安排話術矯治，不宜盲目擴張資源。建議先優化轉換率 10% 再評估。`;
                             categoryRank = aovRankNum;
                           } else {
                             finalCategory = EmployeeCategory.STEADY;
-                            aiAdvice = `【產值平穩】派單期望產值(RPL: $${Math.round(rpl)})貼近常態分佈。做為團隊底盤支撐，應維持精準穩定的供單。`;
+                            aiAdvice = `【產值平穩】派單期望產值(RPL: $${Math.round(rpl)})貼近常態分佈。做為團隊底盤支撐，應維持精準穩定的供單。建議定期審核以防衰退。`;
                             categoryRank = revRankNum;
                           }
 
