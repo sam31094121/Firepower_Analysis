@@ -38,6 +38,9 @@ export interface EmployeeData {
   aiAdvice?: string;           // 一般派單建議
   scoutAdvice?: string;        // 星探區專用建議(現況+提拔原因)
 
+  // 帳務追蹤軌跡
+  rollbackTrace?: string[];    // 自動回溯標記 (Audit Trail)
+
   // 原有累積數據 (保留擴充性)
   monthlyTotalLeads: number;
   monthlyLeadSales: number;
@@ -81,6 +84,7 @@ export interface HistoryRecord {
   };
 
   totalRevenue: number;
+  rollbackTrace?: string[];      // 自動回溯標記 (Audit Trail)
 }
 
 export interface AnalysisSummary {
@@ -130,6 +134,7 @@ export interface EmployeeDailyRecord {
 
   source: 'minshi' | 'yishin' | 'combined' | 'integrated'; // 資料來源
   createdAt: string;             // 建立時間
+  rollbackTrace?: string[];      // 自動回溯標記 (Audit Trail)
 }
 
 // 資料驗證相關類型
@@ -141,6 +146,7 @@ export interface ValidationError {
   field: string;                 // 欄位名稱
   message: string;               // 錯誤訊息
   employeeName?: string;         // 員工姓名
+  overflowSales?: number;        // 當為溢單提示時，紀錄溢出單數
 }
 
 export interface ValidationResult {

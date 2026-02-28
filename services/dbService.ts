@@ -294,6 +294,17 @@ export const saveEmployeeDailyRecordDB = async (record: EmployeeDailyRecord): Pr
   }
 };
 
+export const updateEmployeeDailyRecordDB = async (id: string, updates: Partial<EmployeeDailyRecord>): Promise<void> => {
+  try {
+    const recordRef = doc(db, COLLECTION_EMPLOYEE_DAILY_RECORDS, id);
+    const cleanUpdates = JSON.parse(JSON.stringify(updates, (key, value) => value === undefined ? null : value));
+    await setDoc(recordRef, cleanUpdates, { merge: true });
+  } catch (error) {
+    console.error("Firestore: 更新員工每日紀錄失敗", error);
+    throw new Error("更新員工每日紀錄失敗");
+  }
+};
+
 export const getEmployeeDailyRecordsDB = async (
   employeeId: string,
   startDate: string,

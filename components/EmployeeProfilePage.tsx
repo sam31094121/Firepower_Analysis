@@ -256,6 +256,7 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                         <th className="px-4 py-2 text-right font-black text-slate-700">贈品</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">派單價值</th>
                                         <th className="px-4 py-2 text-right font-black text-slate-700">總業績</th>
+                                        <th className="px-4 py-2 text-left font-black text-slate-700 w-48">備註/軌跡</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -273,11 +274,24 @@ const EmployeeProfilePage: React.FC<Props> = ({ employee, onClose, onUpdate }) =
                                             <td className="px-4 py-2 text-right text-slate-400">{record.rawData?.giftCount ?? 0}</td>
                                             <td className="px-4 py-2 text-right">${(record.rawData?.avgOrderValue ?? 0).toLocaleString()}</td>
                                             <td className="px-4 py-2 text-right font-black">${(record.rawData?.todayNetRevenue ?? 0).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-left text-xs bg-slate-50 border-l border-slate-100">
+                                                {record.rawData?.rollbackTrace && record.rawData.rollbackTrace.length > 0 ? (
+                                                    <div className="flex flex-col gap-1">
+                                                        {record.rawData.rollbackTrace.map((trace, i) => (
+                                                            <span key={i} className="inline-block bg-blue-100/50 text-blue-700 py-0.5 px-1.5 rounded text-[10px] leading-tight break-words">
+                                                                {trace}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-300">-</span>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                     {filteredRecords.length === 0 && (
                                         <tr>
-                                            <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
+                                            <td colSpan={13} className="px-4 py-8 text-center text-slate-400">
                                                 該期間沒有數據
                                             </td>
                                         </tr>

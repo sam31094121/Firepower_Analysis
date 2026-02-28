@@ -2,8 +2,9 @@
 import React, { useState, useCallback } from 'react';
 import { extractDataFromImage } from '../services/geminiService';
 import { validateEmployeeData } from '../services/dataValidation';
-import { EmployeeData, EmployeeCategory, ValidationResult } from '../types';
+import { EmployeeData, EmployeeCategory, ValidationResult, ValidationError } from '../types';
 import { calculateRankings } from '../utils/rankingCalculator';
+import { getEmployeeDailyRecordsDB, updateEmployeeDailyRecordDB, getRecordByDateDB, saveRecordDB } from '../services/dbService';
 import ValidationModal from './ValidationModal';
 import OrderImport from './OrderImport';
 import DispatchInput from './DispatchInput';
@@ -13,16 +14,18 @@ interface Props {
   onDataLoaded: (data: EmployeeData[]) => void;
   onStatusChange?: (status: string) => void;
   isAnalyzing?: boolean;
+  currentDataSource?: string;
 }
 
 const EXCEL_HEADERS = ["行銷", "派單數", "派成數", "追續數", "總業績", "派單價值", "追續總額", "業績排名", "追續排名", "均價排名", "派單成交率"];
 const COL_COUNT = EXCEL_HEADERS.length;
 
-const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing }) => {
+const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing, currentDataSource }) => {
   const [activeTab, setActiveTab] = useState<'paste' | 'image' | 'order' | 'dispatch' | 'merge'>('paste');
   const [loadingImage, setLoadingImage] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingData, setPendingData] = useState<EmployeeData[] | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
 
   const createBlankRow = () => Array(COL_COUNT).fill('');
 
@@ -111,8 +114,8 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
     // 驗證資料
     const result = validateEmployeeData(rankedData);
 
-    if (!result.isValid || result.infos.length > 0) {
-      // 有錯誤或提示,顯示 Modal
+    if (!result.isValid || result.infos.length > 0 || result.warnings.length > 0) {
+      // 有錯誤、警告或提示,顯示 Modal
       setValidationResult(result);
       setPendingData(rankedData);
     } else {
@@ -131,6 +134,176 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
       onDataLoaded(pendingData);
       setValidationResult(null);
       setPendingData(null);
+    }
+  };
+
+  const handleResolveOverflow = async (overflowWarnings: ValidationError[]) => {
+    if (!pendingData || overflowWarnings.length === 0) return;
+    setIsResolving(true);
+
+    try {
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Deep copy to allow mutation of the pending array
+      const newData = [...pendingData];
+      let stillHasOverflow = false;
+      let detailedMessages: string[] = [];
+
+      for (const warn of overflowWarnings) {
+        if (!warn.overflowSales || !warn.employeeName) continue;
+
+        // Find the index in pending data to modify
+        const empIndex = newData.findIndex(e => e.name === warn.employeeName);
+        if (empIndex === -1) continue;
+
+        let remainingOverflow = warn.overflowSales;
+        const employee = newData[empIndex];
+
+        // Query last 7 days from Firestore for this employee
+        const pastRecords = await getEmployeeDailyRecordsDB(employee.name, weekAgo, todayStr);
+        const filteredRecords = currentDataSource ? pastRecords.filter(r => r.source === currentDataSource) : pastRecords;
+
+        // Filter for unsaturated days (Leads > Sales) and sort newest first (yesterday -> day before)
+        const unsaturatedDays = filteredRecords.filter(r => r.rawData && r.rawData.todayLeads > r.rawData.todaySales).sort((a, b) => b.date.localeCompare(a.date));
+
+        if (unsaturatedDays.length === 0) {
+          alert(`找無「${employee.name}」近7天內未飽和的歷史派單，無法自動回溯。請手動修改資料避免錯誤。`);
+          stillHasOverflow = true;
+          continue;
+        }
+
+        // Trace for the current day's record
+        const currentTraces: string[] = employee.rollbackTrace ? [...employee.rollbackTrace] : [];
+        let summaryForEmp: string[] = [];
+
+        // Distribute overflow to past records
+        for (const past of unsaturatedDays) {
+          if (remainingOverflow <= 0) break;
+
+          const raw = past.rawData;
+          const capacity = Math.max(0, raw.todayLeads - raw.todaySales);
+          const amountToFill = Math.min(capacity, remainingOverflow);
+
+          console.log(`[自動回補] 日期: ${past.date}, 原派單: ${raw.todayLeads}, 原派成: ${raw.todaySales}, 可容納額度: ${capacity}, 準備填入: ${amountToFill}`);
+
+          if (amountToFill > 0) {
+            // Generate Trace Labels
+            const pastMemo = `[${todayStr} 自動回補 +${amountToFill}單 溢出派成數]`;
+            const currentMemo = `[將 ${amountToFill}單 溢出單量分配退回至 ${past.date}]`;
+
+            // Prepare database patch for the historical record
+            const newPastSales = raw.todaySales + amountToFill;
+            const newPastConvRate = raw.todayLeads > 0 ? ((newPastSales / raw.todayLeads) * 100).toFixed(1) + '%' : '0.0%';
+
+            const updatedPastRawData = {
+              ...raw,
+              todaySales: newPastSales,
+              todayConvRate: newPastConvRate,
+              rollbackTrace: raw.rollbackTrace ? [...raw.rollbackTrace, pastMemo] : [pastMemo]
+            };
+
+            // Execute DB Patch for the individual record
+            await updateEmployeeDailyRecordDB(past.id, {
+              rawData: updatedPastRawData
+            });
+
+            // Update top-level HistoryRecord so left sidebar works properly
+            try {
+              const historyRecord = await getRecordByDateDB(past.date, past.source);
+              if (historyRecord) {
+                // Must clone the arrays so React detects state change (deep stringify prevents reference lingering)
+                const newRawDataArray = JSON.parse(JSON.stringify(historyRecord.rawData));
+                const oldEmpIndex = newRawDataArray.findIndex((e: any) => e.name === employee.name);
+
+                let newAnalyzedDataArray = historyRecord.analyzed41DaysData ? JSON.parse(JSON.stringify(historyRecord.analyzed41DaysData)) : undefined;
+
+                if (oldEmpIndex !== -1) {
+                  newRawDataArray[oldEmpIndex] = updatedPastRawData;
+
+                  // Also push changes to analyzed array if AI has already processed it
+                  if (newAnalyzedDataArray) {
+                    const analyzedEmpIndex = newAnalyzedDataArray.findIndex(e => e.name === employee.name);
+                    if (analyzedEmpIndex !== -1) {
+                      const analyzedRaw = newAnalyzedDataArray[analyzedEmpIndex];
+                      newAnalyzedDataArray[analyzedEmpIndex] = {
+                        ...analyzedRaw,
+                        todaySales: newPastSales,
+                        todayConvRate: newPastConvRate,
+                        rollbackTrace: analyzedRaw.rollbackTrace ? [...analyzedRaw.rollbackTrace, pastMemo] : [pastMemo]
+                      };
+                    }
+                  }
+
+                  const updatedHistoryRecord = {
+                    ...historyRecord,
+                    rawData: newRawDataArray,
+                    analyzed41DaysData: newAnalyzedDataArray,
+                    rollbackTrace: historyRecord.rollbackTrace ? [...historyRecord.rollbackTrace, `[${employee.name}] ${pastMemo}`] : [`[${employee.name}] ${pastMemo}`]
+                  };
+
+                  await saveRecordDB(updatedHistoryRecord);
+                }
+              }
+            } catch (hrErr) {
+              console.warn(`Failed to patch HistoryRecord for ${past.date}`, hrErr);
+            }
+
+            // Update local memory states
+            remainingOverflow -= amountToFill;
+            currentTraces.push(currentMemo);
+            summaryForEmp.push(`退回 ${amountToFill} 單至 ${past.date}`);
+          }
+        }
+
+        if (remainingOverflow > 0) {
+          stillHasOverflow = true;
+          // Apply partial changes if any
+          employee.todaySales -= (warn.overflowSales - remainingOverflow);
+          employee.todayConvRate = '100.0%';
+          employee.rollbackTrace = currentTraces;
+          detailedMessages.push(`⚠️ ${employee.name} 過去7天未飽和派單量不足(${warn.overflowSales - remainingOverflow} / ${warn.overflowSales})，尚有 ${remainingOverflow} 單無法回溯。 (${summaryForEmp.join(', ')})`);
+        } else {
+          // All overflow resolved for this employee!
+          employee.todaySales -= warn.overflowSales; // Cap sales to equal leads
+          employee.todayConvRate = '100.0%'; // If overflowed, it must be 100% now
+          employee.rollbackTrace = currentTraces;
+          detailedMessages.push(`✅ ${employee.name} 已成功解決溢單！ (${summaryForEmp.join(', ')})`);
+        }
+      }
+
+      // Re-evaluate validation with the fully patched newData array
+      const finalResult = validateEmployeeData(newData);
+
+      // Append detailed messages into infos so user sees what happened
+      if (detailedMessages.length > 0) {
+        finalResult.infos.unshift({
+          type: 'info',
+          row: 0,
+          field: '系統',
+          message: detailedMessages.join('\n')
+        });
+      }
+
+      // Check if ANY unresolvable overflow exists for ANY employee
+      const hasUnresolvedOverflow = finalResult.warnings.some(w => w.overflowSales !== undefined && w.overflowSales > 0);
+
+      if (!finalResult.isValid || hasUnresolvedOverflow) {
+        // Still have blocking issues after attempted resolution
+        setValidationResult(finalResult);
+        setPendingData(newData);
+      } else {
+        // Success! Instead of auto-loading, show the modal with the success info logs so user can review and hit "確認載入" manually.
+        setValidationResult(finalResult);
+        setPendingData(newData);
+      }
+
+    } catch (err) {
+      console.error("Rollback Error:", err);
+      alert("回溯過程發生錯誤，已終止操作。");
+    } finally {
+      setIsResolving(false);
     }
   };
 
@@ -300,6 +473,8 @@ const DataInput: React.FC<Props> = ({ onDataLoaded, onStatusChange, isAnalyzing 
           result={validationResult}
           onClose={handleValidationClose}
           onContinue={handleValidationContinue}
+          onResolveOverflow={handleResolveOverflow}
+          isResolving={isResolving}
         />
       )}
     </div>

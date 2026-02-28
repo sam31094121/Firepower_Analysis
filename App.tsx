@@ -711,14 +711,15 @@ const App: React.FC = () => {
     setAnalyzed41DaysData(analyzed ? [...analyzed] : []);
     setIsAnalyzed(record.isAnalyzed || false);
 
-    // 根據當前視角設定顯示數據
-    if (dataView === 'analyzed' && analyzed) {
-      console.log('  → 切換到 41天分析視角');
+    // 根據當前載入的紀錄設定顯示數據
+    if (analyzed && analyzed.length > 0) {
+      console.log('  → 紀錄已分析，自動切換到 41天分析視角');
       setEmployees([...analyzed]);
+      setDataView('analyzed');
     } else {
-      console.log('  → 切換到當日數據視角');
+      console.log('  → 紀錄未分析，強制切換到當日數據視角');
       setEmployees([...raw]);
-      setDataView('raw');  // 如果沒有分析數據，強制切換到原始視角
+      setDataView('raw');
     }
 
     setCurrentTitle(record.title);
@@ -991,7 +992,7 @@ const App: React.FC = () => {
 
               {activeArea === 'input' && (
                 <>
-                  <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} />
+                  <DataInput onDataLoaded={handleDataLoad} isAnalyzing={isAnalyzing} currentDataSource={currentDataSource} />
                   <HistorySidebar
                     records={history}
                     onLoadRecord={loadRecord}

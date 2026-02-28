@@ -52,14 +52,16 @@ export const validateEmployeeData = (
             });
         }
 
-        // 派成數 > 派單數
-        if (emp.todaySales > emp.todayLeads && emp.todayLeads > 0) {
-            errors.push({
-                type: 'error',
+        // 派成數 > 派單數 (溢單檢查)
+        if (emp.todaySales > emp.todayLeads) {
+            const overflow = emp.todaySales - emp.todayLeads;
+            warnings.push({
+                type: 'warning', // 降級為警告，觸發 DataInput 裡的互動式回溯
                 row: rowNum,
                 field: '派成數',
                 employeeName: emp.name,
-                message: `派成數 (${emp.todaySales}) 不應超過派單數 (${emp.todayLeads})`
+                message: `派成數 (${emp.todaySales}) 超過派單數 (${emp.todayLeads})`,
+                overflowSales: overflow
             });
         }
 

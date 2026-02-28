@@ -507,14 +507,14 @@ const Dashboard: React.FC<Props> = ({ employees, onRefresh, history, dataSourceM
                         {/* AI / 演算法 建議縮影 */}
                         <div className="text-xs text-slate-500 leading-relaxed max-w-2xl truncate group-hover:text-slate-700 transition-colors">
                           <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-400 mr-1.5 align-middle mix-blend-multiply">詳情</span>
-                          {emp.aiAdvice.replace(/\[.*?\]\s*/, '')} {/* 移除標籤讓列表較乾淨 */}
+                          {String(emp.aiAdvice || '').replace(/\[.*?\]\s*/, '')} {/* 移除標籤讓列表較乾淨 */}
                         </div>
                       </div>
 
                       {/* 核心數據顯示 (右側大數字) */}
                       <div className="flex flex-col items-end justify-center pr-2 flex-shrink-0">
                         <div className="text-3xl font-black text-rose-500 drop-shadow-sm tracking-tight">
-                          {emp.todayConvRate.replace('%', '')}<span className="text-lg font-bold text-rose-400 ml-0.5">%</span>
+                          {String(emp.todayConvRate || '0%').replace('%', '')}<span className="text-lg font-bold text-rose-400 ml-0.5">%</span>
                         </div>
                       </div>
                     </div>
